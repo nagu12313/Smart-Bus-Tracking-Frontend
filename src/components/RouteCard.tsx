@@ -13,6 +13,10 @@ export interface RouteInfo {
   progress?: number;
   driverName?: string;
   driverPhone?: string;
+  locationName?: string;
+  nearbyLandmark?: string;
+  accuracyDescription?: string;
+  isRoadMatched?: boolean;
 }
 
 interface RouteCardProps {
@@ -126,6 +130,61 @@ export function RouteCard({ data, selected = false, onSelect }: RouteCardProps) 
           </div>
         </div>
       </div>
+
+      {/* Verified Location & Nearby Landmark Badge */}
+      {data.locationName && (
+        <div style={{
+          padding: "5px 12px 6px",
+          borderTop: selected ? "1px solid rgba(255,255,255,0.15)" : "1px solid #f1f5f9",
+          background: selected ? "rgba(0,0,0,0.12)" : "#fafafa",
+          fontSize: "11px",
+          display: "flex",
+          flexDirection: "column",
+          gap: "2px"
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+            <span>📍</span>
+            <span
+              style={{
+                fontWeight: 600,
+                color: selected ? "#f1f5f9" : "#0f172a",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                flex: 1
+              }}
+              title={data.locationName}
+            >
+              {data.locationName}
+            </span>
+            {data.isRoadMatched && (
+              <span style={{
+                fontSize: "9px",
+                fontWeight: 700,
+                padding: "1px 6px",
+                borderRadius: "10px",
+                background: selected ? "#38bdf8" : "#e0f2fe",
+                color: selected ? "#0f172a" : "#0284c7",
+                whiteSpace: "nowrap"
+              }}>
+                Road Aligned
+              </span>
+            )}
+          </div>
+          {data.nearbyLandmark && (
+            <div style={{
+              fontSize: "10px",
+              color: selected ? "#cbd5e1" : "#64748b",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              paddingLeft: "17px"
+            }} title={data.nearbyLandmark}>
+              🏛️ {data.nearbyLandmark}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

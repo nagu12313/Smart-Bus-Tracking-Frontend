@@ -1043,16 +1043,18 @@ function ProtectedLayout() {
     watchId = navigator.geolocation.watchPosition(
       async (pos) => {
         try {
-          const { latitude, longitude, speed, heading } = pos.coords;
+          const { latitude, longitude, speed, heading, accuracy } = pos.coords;
           const kmh = speed != null && speed > 0 ? Number((speed * 3.6).toFixed(1)) : 0.0;
           await api.post(
             "/api/tracking/location",
             {
               busId: myBus.id,
-              latitude: Number(latitude.toFixed(5)),
-              longitude: Number(longitude.toFixed(5)),
+              latitude: Number(latitude.toFixed(6)),
+              longitude: Number(longitude.toFixed(6)),
               speed: kmh,
               ...(heading != null && !isNaN(heading) ? { heading: Number(heading.toFixed(1)) } : {}),
+              ...(accuracy != null && !isNaN(accuracy) ? { accuracy: Number(accuracy.toFixed(1)) } : {}),
+              provider: "BROWSER_DEVICE_GPS",
             },
             { skipLoading: true }
           );
@@ -1063,7 +1065,7 @@ function ProtectedLayout() {
       (err) => {
         console.warn("Driver background GPS watch error:", err.message);
       },
-      { enableHighAccuracy: true, maximumAge: 2000, timeout: 8000 }
+      { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 }
     );
 
     return () => {
@@ -1858,21 +1860,37 @@ function DriverDashboard() {
   }, [driver, bus]);
 
   // Transmit real-time coordinates to backend silently without triggering global loader
-  const transmitGps = useCallback(async (lat, lng, speed = 0, heading = null) => {
+  const transmitGps = useCallback(async (lat, lng, speed = 0, heading = null, accuracy = null) => {
     if (!bus) return;
     try {
-      await api.post("/api/tracking/location", {
+      const res = await api.post("/api/tracking/location", {
         busId: bus.id,
         latitude: Number(lat.toFixed(6)),
         longitude: Number(lng.toFixed(6)),
         speed: Number(speed),
-        // Only send heading if it is a real device value (not null/undefined)
-        ...(heading != null ? { heading: Number(heading.toFixed(1)) } : {}),
+        ...(heading != null && !isNaN(heading) ? { heading: Number(heading.toFixed(1)) } : {}),
+        ...(accuracy != null && !isNaN(accuracy) ? { accuracy: Number(accuracy.toFixed(1)) } : {}),
         tripId: currentTripId,
+        provider: "BROWSER_DEVICE_GPS",
       }, { skipLoading: true });
-      setCurrentCoords({ lat, lng, speed, time: new Date().toLocaleTimeString() });
+
+      const data = res.data;
+      setCurrentCoords({
+        lat,
+        lng,
+        speed,
+        heading,
+        accuracy,
+        locationName: data?.locationName,
+        nearbyLandmark: data?.nearbyLandmark,
+        time: new Date().toLocaleTimeString(),
+      });
       setPingsCount((c) => c + 1);
-      setGpsStatus("🔴 Live GPS Stream Active (Broadcasting to Parents & Admins)");
+      setGpsStatus(
+        accuracy != null
+          ? `🟢 GPS Lock (±${Math.round(accuracy)}m accuracy) - Broadcasting`
+          : "🟢 GPS Stream Active - Broadcasting"
+      );
     } catch {
       // transient network glitch
     }
@@ -1889,33 +1907,44 @@ function DriverDashboard() {
 
     let watchId = null;
 
+    const onPosSuccess = (pos) => {
+      const { latitude, longitude, speed, heading, accuracy } = pos.coords;
+      const kmh = speed != null && speed > 0 ? Number((speed * 3.6).toFixed(1)) : 0;
+      const realHeading = heading != null && !isNaN(heading) ? heading : null;
+      transmitGps(latitude, longitude, kmh, realHeading, accuracy);
+    };
+
+    const onPosError = (err) => {
+      console.warn("GPS watch position error:", err);
+      setGpsStatus("⚠️ Waiting for device GPS fix. Please ensure location services are enabled.");
+    };
+
     if ("geolocation" in navigator) {
-      setGpsStatus("Acquiring GPS signal from your device...");
-      watchId = navigator.geolocation.watchPosition(
-        (pos) => {
-          const { latitude, longitude, speed, heading } = pos.coords;
-          // Convert m/s → km/h; use null if no real heading available
-          const kmh = speed != null && speed > 0 ? Number((speed * 3.6).toFixed(1)) : 0;
-          const realHeading = heading != null && !isNaN(heading) ? heading : null;
-          transmitGps(latitude, longitude, kmh, realHeading);
-        },
-        () => {
-          // Fallback if browser permission is pending or denied
-          setGpsStatus("Device GPS permission pending. Streaming route coordinates.");
-        },
-        { enableHighAccuracy: true, maximumAge: 3000, timeout: 10000 }
-      );
+      setGpsStatus("Acquiring high-accuracy GPS signal from your device...");
+      navigator.geolocation.getCurrentPosition(onPosSuccess, onPosError, {
+        enableHighAccuracy: true,
+        maximumAge: 1000,
+        timeout: 10000,
+      });
+
+      watchId = navigator.geolocation.watchPosition(onPosSuccess, onPosError, {
+        enableHighAccuracy: true,
+        maximumAge: 1000,
+        timeout: 10000,
+      });
     }
 
-    // Periodic heartbeat transmission every 5 seconds
+    // Keep-alive heartbeat: re-queries genuine hardware GPS reading.
+    // NEVER injects fake synthetic offsets or arbitrary coordinates.
     const interval = setInterval(() => {
-      setCurrentCoords((prev) => {
-        const nextLat = (prev?.lat || 17.4435) + 0.0003;
-        const nextLng = (prev?.lng || 78.3772) + 0.0003;
-        transmitGps(nextLat, nextLng, 42.0, null);
-        return { lat: nextLat, lng: nextLng, speed: 42.0, time: new Date().toLocaleTimeString() };
-      });
-    }, 5000);
+      if ("geolocation" in navigator && (gpsActive || tripInProgress)) {
+        navigator.geolocation.getCurrentPosition(
+          onPosSuccess,
+          () => {},
+          { enableHighAccuracy: true, maximumAge: 2000, timeout: 8000 }
+        );
+      }
+    }, 8000);
 
     return () => {
       if (watchId !== null) navigator.geolocation.clearWatch(watchId);
@@ -2016,20 +2045,38 @@ function DriverDashboard() {
           </div>
           <div className="col-md-4">
             <div className="detail-line">
-              <span>Current Position</span>
+              <span>Current GPS Coordinates</span>
               <b>
-                {currentCoords?.lat?.toFixed(4)}° N, {currentCoords?.lng?.toFixed(4)}° E
+                {currentCoords?.lat != null ? `${currentCoords.lat.toFixed(6)}° N, ${currentCoords.lng.toFixed(6)}° E` : "Acquiring..."}
               </b>
             </div>
           </div>
           <div className="col-md-4">
             <div className="detail-line">
-              <span>Live Speed &amp; Updates</span>
+              <span>Accuracy &amp; Speed</span>
               <b>
-                {currentCoords?.speed || 40} km/h · {pingsCount} updates sent
+                {currentCoords?.accuracy != null ? `±${Math.round(currentCoords.accuracy)}m` : "Acquiring"} · {Math.round(currentCoords?.speed || 0)} km/h · {pingsCount} updates
               </b>
             </div>
           </div>
+
+          {currentCoords?.locationName && (
+            <div className="col-12 mt-2">
+              <div className="p-2 rounded" style={{ background: "#f1f5f9", border: "1px solid #cbd5e1" }}>
+                <span className="text-muted d-block" style={{ fontSize: "10px", fontWeight: 700, textTransform: "uppercase" }}>
+                  Verified Detected Address
+                </span>
+                <b className="text-dark" style={{ fontSize: "13px" }}>
+                  📍 {currentCoords.locationName}
+                </b>
+                {currentCoords?.nearbyLandmark && (
+                  <div className="text-secondary mt-1" style={{ fontSize: "11px" }}>
+                    🏛️ <i>{currentCoords.nearbyLandmark}</i>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="d-flex gap-2 mt-3 pt-2" style={{ borderTop: "1px solid #e2e8f0" }}>
@@ -2043,13 +2090,24 @@ function DriverDashboard() {
           <button
             className="btn btn-sm btn-outline-primary rounded-pill px-3"
             onClick={() => {
-              const nextLat = (currentCoords?.lat || 17.4435) + 0.001;
-              const nextLng = (currentCoords?.lng || 78.3772) + 0.001;
-              transmitGps(nextLat, nextLng, 45.0, null);
+              if ("geolocation" in navigator) {
+                setGpsStatus("Polling exact device GPS coordinates...");
+                navigator.geolocation.getCurrentPosition(
+                  (pos) => {
+                    const { latitude, longitude, speed, heading, accuracy } = pos.coords;
+                    const kmh = speed != null && speed > 0 ? Number((speed * 3.6).toFixed(1)) : 0;
+                    transmitGps(latitude, longitude, kmh, heading, accuracy);
+                  },
+                  (err) => {
+                    setGpsStatus(`GPS acquisition error: ${err.message}`);
+                  },
+                  { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+                );
+              }
             }}
           >
-            <i className="bi bi-send-fill me-1" />
-            Send Test Ping Now
+            <i className="bi bi-geo-alt-fill me-1" />
+            Refresh Device GPS Fix Now
           </button>
           <Link to="/tracking" className="btn btn-sm btn-outline-secondary rounded-pill px-3 ms-auto">
             View Live Map <i className="bi bi-arrow-up-right ms-1" />
@@ -2328,6 +2386,16 @@ function Tracking() {
         status: isFresh ? (live.status || b.status) : (b.status || "PARKED"),
         latitude: live?.latitude ?? b.latitude ?? 16.3235,
         longitude: live?.longitude ?? b.longitude ?? 80.4578,
+        rawLatitude: live?.rawLatitude ?? live?.latitude ?? b.latitude,
+        rawLongitude: live?.rawLongitude ?? live?.longitude ?? b.longitude,
+        snappedLatitude: live?.snappedLatitude,
+        snappedLongitude: live?.snappedLongitude,
+        isRoadMatched: live?.isRoadMatched,
+        roadName: live?.roadName,
+        accuracy: live?.accuracy,
+        accuracyDescription: live?.accuracyDescription,
+        locationName: live?.locationName,
+        nearbyLandmark: live?.nearbyLandmark,
         speed: isFresh ? (live.speed ?? 0) : 0,
         // Only pass heading when GPS is fresh — null triggers bearing calculation in useBusHeading
         heading: isFresh && live.heading != null ? live.heading : null,
@@ -2450,6 +2518,10 @@ function Tracking() {
         status: isActive ? "active" : "parked",
         driverName: b.driverName,
         driverPhone: b.driverPhone,
+        locationName: live?.locationName,
+        nearbyLandmark: live?.nearbyLandmark,
+        accuracyDescription: live?.accuracyDescription,
+        isRoadMatched: live?.isRoadMatched,
       };
     });
   }, [visibleBuses, visibleLiveLocations, routes, getDistanceKm]);

@@ -6,6 +6,7 @@ import {
   Popup,
   Polyline,
   Tooltip,
+  Circle,
   useMap,
 } from "react-leaflet";
 import L from "leaflet";
@@ -93,6 +94,17 @@ const createStopIcon = (order = 1, isDestination = false) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Raw GPS Pin Icon — displayed when raw GPS coordinates differ from road-snapped
+// ─────────────────────────────────────────────────────────────────────────────
+const createRawGpsIcon = () =>
+  L.divIcon({
+    html: `<div style="width:10px;height:10px;background:#3b82f6;border:2px solid #ffffff;border-radius:50%;box-shadow:0 0 6px rgba(37,99,235,0.6);"></div>`,
+    className: "raw-gps-dot-marker",
+    iconSize: [10, 10],
+    iconAnchor: [5, 5],
+  });
+
+// ─────────────────────────────────────────────────────────────────────────────
 // createRotatingBusIcon — builds a Leaflet divIcon with the CSS rotation baked in.
 // Called whenever cssRotation, isSelected, or bus metadata changes.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -156,12 +168,15 @@ const EMPTY_ROUTE = [];
 // ─────────────────────────────────────────────────────────────────────────────
 // RotatingBusMarker — individual bus marker with live heading animation.
 // Keeps its own animated rotation state via useBusHeading.
+// Supports both raw device GPS accuracy display and reliable road-snapped alignment.
 // ─────────────────────────────────────────────────────────────────────────────
 function RotatingBusMarker({ bus, isSelected, roadPolyline = EMPTY_ROUTE, onSelectBus }) {
   const markerRef = useRef(null);
 
-  const lat = bus?.latitude ?? bus?.lat;
-  const lng = bus?.longitude ?? bus?.lng;
+  const displayLat = (bus?.isRoadMatched && bus?.snappedLatitude != null) ? bus.snappedLatitude : (bus?.latitude ?? bus?.lat);
+  const displayLng = (bus?.isRoadMatched && bus?.snappedLongitude != null) ? bus.snappedLongitude : (bus?.longitude ?? bus?.lng);
+  const rawLat = bus?.rawLatitude ?? bus?.latitude ?? bus?.lat;
+  const rawLng = bus?.rawLongitude ?? bus?.longitude ?? bus?.lng;
 
   // GPS staleness check: > 3 minutes old or explicitly stale
   const isStale =
@@ -181,65 +196,161 @@ function RotatingBusMarker({ bus, isSelected, roadPolyline = EMPTY_ROUTE, onSele
     markerRef.current.setIcon(icon);
   }, [cssRotation, isSelected, bus?.speed, bus?.status, bus?.busNumber, bus?.number]);
 
-  if (lat == null || lng == null) return null;
+  if (displayLat == null || displayLng == null) return null;
+
+  const hasSnappedOffset =
+    Boolean(bus?.isRoadMatched) &&
+    rawLat != null &&
+    rawLng != null &&
+    (Math.abs(rawLat - displayLat) > 0.00008 || Math.abs(rawLng - displayLng) > 0.00008);
+
+  const accuracyMeters = typeof bus?.accuracy === "number" && bus.accuracy > 0 ? bus.accuracy : null;
 
   return (
-    <Marker
-      ref={markerRef}
-      position={[lat, lng]}
-      icon={createRotatingBusIcon(bus, cssRotation, isSelected)}
-      eventHandlers={{ click: () => onSelectBus && onSelectBus(bus) }}
-    >
-      <Popup>
-        <div style={{ minWidth: "210px", padding: "4px" }}>
-          <div style={{
-            display: "flex", justifyContent: "space-between",
-            alignItems: "center", borderBottom: "1px solid #f1f5f9",
-            paddingBottom: "6px", marginBottom: "6px",
-          }}>
-            <div>
-              <h6 style={{ margin: 0, fontWeight: 800, color: "#0f172a", fontSize: "14px" }}>
-                🚌 {bus.busNumber || bus.number}
-              </h6>
-              <small style={{ color: "#64748b", fontSize: "11px" }}>
-                {bus.busName || bus.name || "Campus Shuttle"}
-              </small>
-            </div>
-            <span style={{
-              fontSize: "10px", fontWeight: 700, padding: "2px 8px",
-              borderRadius: "12px",
-              background: bus.status === "ON_ROUTE" ? "#dcfce7" : "#f1f5f9",
-              color: bus.status === "ON_ROUTE" ? "#15803d" : "#475569",
-            }}>
-              {bus.status || "STANDBY"}
-            </span>
-          </div>
+    <React.Fragment>
+      {/* Real Device GPS Accuracy Radius Circle (Visible when bus is selected) */}
+      {isSelected && accuracyMeters && accuracyMeters < 800 && (
+        <Circle
+          center={[rawLat, rawLng]}
+          radius={accuracyMeters}
+          pathOptions={{
+            color: "#3b82f6",
+            fillColor: "#60a5fa",
+            fillOpacity: 0.12,
+            weight: 1.5,
+            dashArray: "4, 4",
+          }}
+        />
+      )}
 
-          <div style={{ fontSize: "12px", display: "flex", flexDirection: "column", gap: "4px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span style={{ color: "#64748b" }}>Speed:</span>
-              <b style={{ color: "#0284c7" }}>{Math.round(bus.speed ?? 0)} km/h</b>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span style={{ color: "#64748b" }}>Heading:</span>
-              <span>{Math.round(normalizeAngle(geoBearing ?? bus.heading ?? 0))}° ({compassDirection(geoBearing ?? bus.heading ?? 0)})</span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span style={{ color: "#64748b" }}>Driver:</span>
-              <span style={{ fontWeight: 600 }}>{bus.driverName || "Driver Assigned"}</span>
-            </div>
-            {bus.driverPhone && (
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span style={{ color: "#64748b" }}>Phone:</span>
-                <a href={`tel:${bus.driverPhone}`} style={{ color: "#2563eb", textDecoration: "none" }}>
-                  {bus.driverPhone}
-                </a>
+      {/* Visual connection line between Raw Device GPS & Road-Snapped Display Position */}
+      {isSelected && hasSnappedOffset && (
+        <>
+          <Polyline
+            positions={[
+              [rawLat, rawLng],
+              [displayLat, displayLng],
+            ]}
+            pathOptions={{
+              color: "#94a3b8",
+              weight: 1.5,
+              dashArray: "3, 3",
+              opacity: 0.8,
+            }}
+          />
+          <Marker
+            position={[rawLat, rawLng]}
+            icon={createRawGpsIcon()}
+          >
+            <Tooltip direction="bottom" offset={[0, 6]}>
+              <div style={{ fontSize: "11px", fontWeight: 600 }}>
+                📍 Raw Device GPS (±{Math.round(accuracyMeters || 10)}m)
               </div>
-            )}
+            </Tooltip>
+          </Marker>
+        </>
+      )}
+
+      {/* Primary Yellow Top-View Bus Marker */}
+      <Marker
+        ref={markerRef}
+        position={[displayLat, displayLng]}
+        icon={createRotatingBusIcon(bus, cssRotation, isSelected)}
+        eventHandlers={{ click: () => onSelectBus && onSelectBus(bus) }}
+      >
+        <Popup>
+          <div style={{ minWidth: "240px", padding: "4px" }}>
+            <div style={{
+              display: "flex", justifyContent: "space-between",
+              alignItems: "center", borderBottom: "1px solid #f1f5f9",
+              paddingBottom: "6px", marginBottom: "6px",
+            }}>
+              <div>
+                <h6 style={{ margin: 0, fontWeight: 800, color: "#0f172a", fontSize: "14px" }}>
+                  🚌 {bus.busNumber || bus.number}
+                </h6>
+                <small style={{ color: "#64748b", fontSize: "11px" }}>
+                  {bus.busName || bus.name || "Campus Shuttle"}
+                </small>
+              </div>
+              <span style={{
+                fontSize: "10px", fontWeight: 700, padding: "2px 8px",
+                borderRadius: "12px",
+                background: bus.status === "ON_ROUTE" ? "#dcfce7" : "#f1f5f9",
+                color: bus.status === "ON_ROUTE" ? "#15803d" : "#475569",
+              }}>
+                {bus.status || "STANDBY"}
+              </span>
+            </div>
+
+            <div style={{ fontSize: "12px", display: "flex", flexDirection: "column", gap: "5px" }}>
+              {/* Verified Location Address */}
+              <div style={{ background: "#f8fafc", padding: "6px 8px", borderRadius: "6px", border: "1px solid #e2e8f0" }}>
+                <div style={{ color: "#475569", fontSize: "10px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                  Verified Location
+                </div>
+                <div style={{ fontWeight: 600, color: "#0f172a", fontSize: "12px", marginTop: "1px" }}>
+                  {bus.locationName || "Location verified via GPS"}
+                </div>
+                {bus.nearbyLandmark && (
+                  <div style={{ color: "#64748b", fontSize: "11px", marginTop: "2px" }}>
+                    🏛️ <i>{bus.nearbyLandmark}</i>
+                  </div>
+                )}
+              </div>
+
+              {/* Accuracy & Road Alignment Status */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ color: "#64748b" }}>GPS Accuracy:</span>
+                <span style={{
+                  fontSize: "11px", fontWeight: 700,
+                  color: (accuracyMeters && accuracyMeters <= 20) ? "#16a34a" : "#d97706"
+                }}>
+                  {accuracyMeters ? `±${Math.round(accuracyMeters)}m (${bus.accuracyDescription || "Good"})` : "GPS Locked"}
+                </span>
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ color: "#64748b" }}>Map Mode:</span>
+                <span style={{ fontSize: "11px", fontWeight: 600, color: bus.isRoadMatched ? "#0284c7" : "#475569" }}>
+                  {bus.isRoadMatched ? `🛣️ Road-Snapped (${bus.roadName || "Assigned Route"})` : "📡 Direct GPS"}
+                </span>
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: "#64748b" }}>Speed:</span>
+                <b style={{ color: "#0284c7" }}>{Math.round(bus.speed ?? 0)} km/h</b>
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: "#64748b" }}>Heading:</span>
+                <span>{Math.round(normalizeAngle(geoBearing ?? bus.heading ?? 0))}° ({compassDirection(geoBearing ?? bus.heading ?? 0)})</span>
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: "#64748b" }}>Driver:</span>
+                <span style={{ fontWeight: 600 }}>{bus.driverName || "Driver Assigned"}</span>
+              </div>
+
+              {bus.driverPhone && (
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span style={{ color: "#64748b" }}>Phone:</span>
+                  <a href={`tel:${bus.driverPhone}`} style={{ color: "#2563eb", textDecoration: "none" }}>
+                    {bus.driverPhone}
+                  </a>
+                </div>
+              )}
+
+              {rawLat != null && rawLng != null && (
+                <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: "4px", fontSize: "10px", color: "#94a3b8" }}>
+                  GPS: {Number(rawLat).toFixed(5)}°, {Number(rawLng).toFixed(5)}°
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      </Popup>
-    </Marker>
+        </Popup>
+      </Marker>
+    </React.Fragment>
   );
 }
 

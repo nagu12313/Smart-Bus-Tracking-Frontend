@@ -83,8 +83,7 @@ function App() {
     }
   }, []);
 
-  // Fast parallel initial load on app start
-  const initialLoadDoneRef = useRef(false);
+  // Fast parallel load on authentication or mount
   const loadData = useCallback(async (silent = true) => {
     if (!authService.isAuthenticated()) return;
     const reqConfig = silent ? { skipLoading: true } : {};
@@ -113,13 +112,12 @@ function App() {
     }
   }, [user?.role]);
 
-  // Load data once when user is authenticated or mounts
+  // Load data immediately whenever user is authenticated or mounts
   useEffect(() => {
-    if (authService.isAuthenticated() && !initialLoadDoneRef.current) {
-      initialLoadDoneRef.current = true;
+    if (authService.isAuthenticated()) {
       loadData(true);
     }
-  }, [loadData]);
+  }, [user?.id, user?.role, loadData]);
 
   const value = {
     user,
@@ -234,7 +232,7 @@ function Landing() {
 // LOGIN & REGISTRATION PAGE — Animated Card Transition & Gmail Verification
 // ============================================================
 function Login() {
-  const { setUser } = useStore();
+  const { setUser, refreshData } = useStore();
   const nav = useNavigate();
   const location = useLocation();
 
@@ -446,6 +444,9 @@ function Login() {
     try {
       const { user } = await authService.login(email.trim(), password);
       setUser(user);
+      if (refreshData) {
+        refreshData(false).catch(() => {});
+      }
       nav("/dashboard");
     } catch (err) {
       const msg = err.response?.data?.message || "Invalid credentials. Please check your email and password.";
@@ -479,6 +480,9 @@ function Login() {
     try {
       const { user } = await authService.register(regName.trim(), regEmail.trim(), regPassword, regRole, otp.trim());
       setUser(user);
+      if (refreshData) {
+        refreshData(false).catch(() => {});
+      }
       nav("/dashboard");
     } catch (err) {
       const msg = err.response?.data?.message || "Registration failed. Please check your details.";
@@ -1012,7 +1016,22 @@ function getAvatarRoleClass(role) {
 // PROTECTED LAYOUT
 // ============================================================
 function ProtectedLayout() {
-  const { user, setUser, drivers = [], buses = [] } = useStore();
+  const {
+    user,
+    setUser,
+    drivers = [],
+    buses = [],
+    setBuses,
+    setDrivers,
+    setStudents,
+    setRoutes,
+    setStats,
+    refreshBuses,
+    refreshDrivers,
+    refreshStudents,
+    refreshRoutes,
+    refreshData,
+  } = useStore();
   const [open, setOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
@@ -1023,11 +1042,27 @@ function ProtectedLayout() {
   const nav = useNavigate();
   const location = useLocation();
 
-  // Reset any in-flight global loading on route transition & auto-close mobile drawer
+  // Reset any in-flight global loading on route transition, auto-close drawer & keep active view fresh
   useEffect(() => {
     api.resetLoading();
     setOpen(false);
-  }, [location.pathname]);
+    if (authService.isAuthenticated()) {
+      if (location.pathname === "/buses") {
+        if (refreshBuses) refreshBuses(true);
+        if (refreshDrivers) refreshDrivers(true);
+        if (refreshRoutes) refreshRoutes(true);
+      } else if (location.pathname === "/drivers") {
+        if (refreshDrivers) refreshDrivers(true);
+      } else if (location.pathname === "/students") {
+        if (refreshStudents) refreshStudents(true);
+        if (refreshBuses) refreshBuses(true);
+      } else if (location.pathname === "/routes") {
+        if (refreshRoutes) refreshRoutes(true);
+      } else if (location.pathname === "/dashboard") {
+        if (refreshData) refreshData(true);
+      }
+    }
+  }, [location.pathname, refreshBuses, refreshDrivers, refreshStudents, refreshRoutes, refreshData]);
 
   // Automatic Background Geolocation Watcher for DRIVER upon login
   // Streams real device GPS coordinates to Spring Boot /api/tracking/location
@@ -1101,6 +1136,11 @@ function ProtectedLayout() {
   const logout = () => {
     authService.logout();
     setUser(null);
+    if (setBuses) setBuses([]);
+    if (setDrivers) setDrivers([]);
+    if (setStudents) setStudents([]);
+    if (setRoutes) setRoutes([]);
+    if (setStats) setStats(null);
     nav("/");
   };
 
@@ -1500,14 +1540,18 @@ function Status({ value }) {
 // ADMIN DASHBOARD — Centralized Live Fleet Telemetry & Shared Map
 // ============================================================
 function Dashboard() {
-  const { user, buses, drivers, students, routes, stats, loading } = useStore();
+  const { user, buses, drivers, students, routes, stats, loading, refreshData } = useStore();
   const [liveLocationsMap, setLiveLocationsMap] = useState({});
 
   const role = user.role?.toUpperCase();
 
-  // Centralized single source of truth: fetch all latest locations on mount
+  // Centralized single source of truth: fetch all latest locations and ensure data is fresh on mount
   useEffect(() => {
     if (role === "PARENT" || role === "STUDENT" || role === "DRIVER") return;
+
+    if (refreshData) {
+      refreshData(true);
+    }
 
     trackingService
       .getAllLatest()
@@ -1736,7 +1780,7 @@ function Dashboard() {
 // FAMILY / STUDENT / PARENT DASHBOARD — with Student Search & Instant Telemetry
 // ============================================================
 function FamilyDashboard() {
-  const { user, buses, students, routes, loading } = useStore();
+  const { user, buses, students, routes, loading, refreshData } = useStore();
   const [studentSearch, setStudentSearch] = useState("");
   const [selectedStudentId, setSelectedStudentId] = useState(() => {
     const matched = students.find((s) => s.email === user.email || s.parentName === user.name || s.name === user.name);
@@ -1745,6 +1789,12 @@ function FamilyDashboard() {
 
   const [busLive, setBusLive] = useState(null);
   const [routeStops, setRouteStops] = useState([]);
+
+  useEffect(() => {
+    if (refreshData && (students.length === 0 || buses.length === 0)) {
+      refreshData(true);
+    }
+  }, []);
 
   useEffect(() => {
     if (!selectedStudentId && students.length > 0) {
@@ -2097,6 +2147,12 @@ function DriverDashboard() {
   const [gpsStatus, setGpsStatus] = useState("Live GPS Ready");
   const [currentCoords, setCurrentCoords] = useState({ lat: 17.4435, lng: 78.3772, speed: 40, time: "Initial" });
   const [pingsCount, setPingsCount] = useState(0);
+
+  useEffect(() => {
+    if (refreshData && (drivers.length === 0 || buses.length === 0)) {
+      refreshData(true);
+    }
+  }, []);
 
   // Check active trips
   useEffect(() => {
@@ -2927,28 +2983,31 @@ function CrudPage({ type, items, onSave, onDelete, fields, description, onAddCus
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
-      if (type === "Buses") await refreshBuses(true);
-      else if (type === "Drivers") await refreshDrivers(true);
-      else if (type === "Students") await refreshStudents(true);
-      else if (type === "Routes") await refreshRoutes(true);
-      else await refreshData(true);
+      if (type === "Buses") {
+        await refreshBuses(true);
+        if (refreshDrivers) refreshDrivers(true);
+        if (refreshRoutes) refreshRoutes(true);
+      } else if (type === "Drivers") {
+        await refreshDrivers(true);
+      } else if (type === "Students") {
+        await refreshStudents(true);
+        if (refreshBuses) refreshBuses(true);
+      } else if (type === "Routes") {
+        await refreshRoutes(true);
+      } else {
+        await refreshData(true);
+      }
     } finally {
       setIsRefreshing(false);
     }
   };
 
-  // Automatically fetch records on first mount if empty
+  // Automatically fetch fresh records whenever this CRUD page is mounted or switches type
   useEffect(() => {
-    if (!mountAttemptedRef.current) {
-      mountAttemptedRef.current = true;
-      if (items.length === 0 && authService.isAuthenticated()) {
-        if (type === "Buses") refreshBuses(true);
-        else if (type === "Drivers") refreshDrivers(true);
-        else if (type === "Students") refreshStudents(true);
-        else if (type === "Routes") refreshRoutes(true);
-      }
+    if (authService.isAuthenticated()) {
+      handleRefresh();
     }
-  }, [type, items.length, refreshBuses, refreshDrivers, refreshStudents, refreshRoutes]);
+  }, [type]);
 
   const blank = Object.fromEntries(fields.map((f) => [f.key, f.default ?? ""]));
   const [form, setForm] = useState(blank);
@@ -3305,7 +3364,12 @@ function CrudPage({ type, items, onSave, onDelete, fields, description, onAddCus
 // BUSES MANAGEMENT
 // ============================================================
 function Buses() {
-  const { buses, setBuses, routes, drivers, refreshData } = useStore();
+  const { buses, setBuses, routes, drivers, refreshData, refreshRoutes, refreshDrivers } = useStore();
+
+  useEffect(() => {
+    if (routes.length === 0 && refreshRoutes) refreshRoutes(true);
+    if (drivers.length === 0 && refreshDrivers) refreshDrivers(true);
+  }, [routes.length, drivers.length, refreshRoutes, refreshDrivers]);
 
   const routeOptions = [
     { label: "None (Unassigned)", value: "" },
@@ -3407,7 +3471,11 @@ function Drivers() {
 // STUDENTS MANAGEMENT
 // ============================================================
 function Students() {
-  const { students, setStudents, buses, refreshData } = useStore();
+  const { students, setStudents, buses, refreshData, refreshBuses } = useStore();
+
+  useEffect(() => {
+    if (buses.length === 0 && refreshBuses) refreshBuses(true);
+  }, [buses.length, refreshBuses]);
 
   const busOptions = [
     { label: "None (Unassigned)", value: "" },
@@ -3461,9 +3529,13 @@ function Students() {
 // ROUTES MANAGEMENT
 // ============================================================
 function RoutesPage() {
-  const { routes, setRoutes, refreshData } = useStore();
+  const { routes, setRoutes, refreshRoutes, refreshData } = useStore();
   const [showBuilder, setShowBuilder] = useState(false);
   const [editingRoute, setEditingRoute] = useState(null);
+
+  useEffect(() => {
+    if (refreshRoutes) refreshRoutes(true);
+  }, [refreshRoutes]);
 
   const fields = [
     { key: "name", label: "Route name" },

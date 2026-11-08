@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect } from "react";
+import transportChatService from "../services/transportChatService";
 
 /**
  * Intelligent Campus Transport Chatbot
- * Provides instant automated help for students, parents, and drivers.
+ * Synchronized with the backend's authoritative bus tracking single source of truth.
  */
 export default function TransportChatbot({
   currentUser,
@@ -41,7 +42,7 @@ export default function TransportChatbot({
     chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isTyping]);
 
-  const handleSend = (textToSend) => {
+  const handleSend = async (textToSend) => {
     const query = (textToSend || input).trim();
     if (!query) return;
 
@@ -56,12 +57,36 @@ export default function TransportChatbot({
     setInput("");
     setIsTyping(true);
 
-    // Generate intelligent contextual response
+    try {
+      // 1. Primary: Query centralized backend single source of truth
+      const backendRes = await transportChatService.sendMessage(query);
+      if (backendRes?.message) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `bot-${Date.now()}`,
+            sender: "bot",
+            text: backendRes.message,
+            time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+            action: {
+              label: "Open Live Map",
+              type: "navigate_map",
+            },
+          },
+        ]);
+        setIsTyping(false);
+        return;
+      }
+    } catch (err) {
+      // Fall back gracefully if offline or unauthenticated
+    }
+
+    // 2. Fallback: Local contextual engine
     setTimeout(() => {
       const botReply = generateBotReply(query, buses);
       setMessages((prev) => [...prev, botReply]);
       setIsTyping(false);
-    }, 600);
+    }, 400);
   };
 
   const generateBotReply = (query, busList) => {

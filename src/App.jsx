@@ -1497,12 +1497,46 @@ function Status({ value }) {
 }
 
 // ============================================================
-// ADMIN DASHBOARD
+// ADMIN DASHBOARD — Centralized Live Fleet Telemetry & Shared Map
 // ============================================================
 function Dashboard() {
   const { user, buses, drivers, students, routes, stats, loading } = useStore();
+  const [liveLocationsMap, setLiveLocationsMap] = useState({});
 
   const role = user.role?.toUpperCase();
+
+  // Centralized single source of truth: fetch all latest locations on mount
+  useEffect(() => {
+    if (role === "PARENT" || role === "STUDENT" || role === "DRIVER") return;
+
+    trackingService
+      .getAllLatest()
+      .then((locs) => {
+        if (locs && Array.isArray(locs)) {
+          const map = {};
+          locs.forEach((l) => { map[l.busId] = l; });
+          setLiveLocationsMap(map);
+        }
+      })
+      .catch(() => {});
+
+    // Monotonic WebSocket subscription to prevent out-of-order packets
+    const unsub = websocketService.subscribe("/topic/tracking", (incoming) => {
+      if (!incoming || !incoming.busId) return;
+      setLiveLocationsMap((prev) => {
+        const existing = prev[incoming.busId];
+        const existingTime = new Date(existing?.gpsTime || existing?.receivedAt || 0).getTime();
+        const incomingTime = new Date(incoming.gpsTime || incoming.receivedAt || 0).getTime();
+        if (incomingTime < existingTime) return prev; // Monotonic guard
+        return { ...prev, [incoming.busId]: incoming };
+      });
+    });
+
+    return () => {
+      if (typeof unsub === "function") unsub();
+    };
+  }, [role]);
+
   if (role === "PARENT" || role === "STUDENT") return <FamilyDashboard />;
   if (role === "DRIVER") return <DriverDashboard />;
 
@@ -1511,9 +1545,43 @@ function Dashboard() {
   }
 
   const totalBuses = stats?.totalBuses ?? buses.length;
-  const activeTrips = stats?.activeTrips ?? buses.filter((b) => b.status === "ON_ROUTE" || b.status === "On Route").length;
+  const activeTrips = stats?.activeTrips ?? buses.filter((b) => {
+    const live = liveLocationsMap[b.id];
+    return (live?.speed && live.speed > 0) || live?.status === "ON_ROUTE" || b.status === "ON_ROUTE";
+  }).length;
   const totalStudents = stats?.totalStudents ?? students.length;
   const totalDrivers = stats?.totalDrivers ?? drivers.length;
+
+  // Adapt buses for shared LiveMap component
+  const adminMapBuses = buses.map((b) => {
+    const live = liveLocationsMap[b.id];
+    const isFresh = live && !live.isStale && live.gpsTime && (Date.now() - new Date(live.gpsTime).getTime()) < 180000;
+    return {
+      ...b,
+      busId: b.id,
+      busNumber: b.busNumber || b.number || `Bus ${b.id}`,
+      busName: b.busName || b.name || "School Bus",
+      driverName: b.driverName || "Assigned Driver",
+      driverPhone: b.driverPhone || "",
+      status: isFresh ? (live.status || b.status) : (b.status || "PARKED"),
+      latitude: live?.latitude ?? b.latitude ?? 17.4475,
+      longitude: live?.longitude ?? b.longitude ?? 78.3762,
+      rawLatitude: live?.rawLatitude ?? live?.latitude ?? b.latitude,
+      rawLongitude: live?.rawLongitude ?? live?.longitude ?? b.longitude,
+      snappedLatitude: live?.snappedLatitude,
+      snappedLongitude: live?.snappedLongitude,
+      isRoadMatched: live?.isRoadMatched,
+      roadName: live?.roadName,
+      accuracy: live?.accuracy,
+      accuracyDescription: live?.accuracyDescription,
+      locationName: live?.locationName,
+      nearbyLandmark: live?.nearbyLandmark,
+      speed: isFresh ? (live.speed ?? 0) : 0,
+      heading: isFresh && live.heading != null ? live.heading : null,
+      gpsTime: live?.gpsTime ?? null,
+      isStale: !isFresh,
+    };
+  });
 
   return (
     <>
@@ -1534,14 +1602,36 @@ function Dashboard() {
         <Stat icon="bi-people" label="Total students" value={totalStudents} detail="Transport assigned" tone="purple" />
         <Stat icon="bi-person-badge" label="Drivers" value={totalDrivers} detail="Registered drivers" tone="orange" />
       </div>
+
+      {/* Centralized Live Fleet Map Widget (Admin / School Admin View) */}
+      <section className="panel mb-4 p-0 overflow-hidden" style={{ borderRadius: "14px", border: "1px solid #e2e8f0" }}>
+        <div className="p-3 bg-white border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
+          <div>
+            <h5 className="mb-0 fw-bold text-dark">
+              <i className="bi bi-broadcast text-success me-2" />
+              Live Fleet Movement &amp; Telemetry
+            </h5>
+            <small className="text-muted">
+              Centralized Single Source of Truth · Real-time driver GPS synchronization across all campus vehicles
+            </small>
+          </div>
+          <Link to="/tracking" className="btn btn-sm btn-primary rounded-pill px-3">
+            Open Interactive Fleet Tracking <i className="bi bi-arrow-up-right ms-1" />
+          </Link>
+        </div>
+        <div style={{ height: "340px", width: "100%", position: "relative" }}>
+          <LiveMap buses={adminMapBuses} />
+        </div>
+      </section>
+
       <div className="content-grid">
         <section className="panel">
           <div className="panel-heading">
             <div>
               <h5>Live fleet overview</h5>
-              <p>Current status of registered buses</p>
+              <p>Real-time telemetry and verified locations for all buses</p>
             </div>
-            <Link to="/tracking">View map <i className="bi bi-arrow-up-right" /></Link>
+            <Link to="/tracking">View full map <i className="bi bi-arrow-up-right" /></Link>
           </div>
           <div className="table-responsive">
             <table className="table align-middle">
@@ -1550,21 +1640,53 @@ function Dashboard() {
                   <th>BUS</th>
                   <th>ROUTE</th>
                   <th>DRIVER</th>
+                  <th>CURRENT LOCATION</th>
+                  <th>SPEED</th>
                   <th>STATUS</th>
+                  <th>LAST UPDATED</th>
                 </tr>
               </thead>
               <tbody>
-                {buses.map((b) => (
-                  <tr key={b.id}>
-                    <td>
-                      <div className="table-primary">{b.busNumber || b.number}</div>
-                      <small>{b.busName || b.name}</small>
-                    </td>
-                    <td>{b.routeName || routes.find((r) => r.id === b.routeId)?.name || "Unassigned"}</td>
-                    <td>{b.driverName || drivers.find((d) => d.id === b.driverId)?.name || "Unassigned"}</td>
-                    <td><Status value={b.status} /></td>
-                  </tr>
-                ))}
+                {buses.map((b) => {
+                  const live = liveLocationsMap[b.id];
+                  const isFresh = live && !live.isStale && live.gpsTime && (Date.now() - new Date(live.gpsTime).getTime()) < 180000;
+                  const curSpeed = isFresh ? Math.round(Number(live.speed || 0)) : 0;
+                  return (
+                    <tr key={b.id}>
+                      <td>
+                        <div className="table-primary">{b.busNumber || b.number}</div>
+                        <small>{b.busName || b.name}</small>
+                      </td>
+                      <td>{b.routeName || routes.find((r) => r.id === b.routeId)?.name || "Unassigned"}</td>
+                      <td>{b.driverName || drivers.find((d) => d.id === b.driverId)?.name || "Unassigned"}</td>
+                      <td>
+                        <div style={{ maxWidth: "200px" }}>
+                          <span className="fw-semibold text-truncate d-block" style={{ fontSize: "12px" }} title={live?.locationName || "On Campus Route"}>
+                            📍 {live?.locationName || "On Campus Network"}
+                          </span>
+                          {live?.nearbyLandmark && (
+                            <small className="text-muted text-truncate d-block" style={{ fontSize: "10px" }} title={live.nearbyLandmark}>
+                              🏛️ {live.nearbyLandmark}
+                            </small>
+                          )}
+                        </div>
+                      </td>
+                      <td>
+                        <b style={{ color: curSpeed > 0 ? "#0284c7" : "#64748b" }}>
+                          {curSpeed} km/h
+                        </b>
+                      </td>
+                      <td><Status value={isFresh ? (live?.status || b.status) : (b.status || "PARKED")} /></td>
+                      <td>
+                        <small className="text-muted" style={{ fontSize: "11px" }}>
+                          {live?.gpsTime
+                            ? new Date(live.gpsTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+                            : "Standby"}
+                        </small>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -1621,6 +1743,9 @@ function FamilyDashboard() {
     return matched ? matched.id : students[0]?.id || null;
   });
 
+  const [busLive, setBusLive] = useState(null);
+  const [routeStops, setRouteStops] = useState([]);
+
   useEffect(() => {
     if (!selectedStudentId && students.length > 0) {
       const matched = students.find((s) => s.email === user.email || s.parentName === user.name || s.name === user.name);
@@ -1628,15 +1753,62 @@ function FamilyDashboard() {
     }
   }, [students, user, selectedStudentId]);
 
-  if (loading && students.length === 0) {
-    return <ContainerSpinner minHeight="350px" />;
-  }
-
   const student = students.find((s) => s.id === selectedStudentId) ||
                   students.find((s) => s.email === user.email || s.name === user.name) ||
                   students[0];
   const bus = buses.find((b) => b.id === student?.busId) || buses[0];
   const route = routes.find((r) => r.id === bus?.routeId);
+
+  // Centralized Single Source of Truth: load latest location for assigned bus on mount / student switch
+  useEffect(() => {
+    if (!bus?.id) return;
+
+    trackingService
+      .getLatestLocation(bus.id)
+      .then((loc) => setBusLive(loc))
+      .catch(() => {});
+
+    if (bus.routeId) {
+      routeService
+        .getById(bus.routeId)
+        .then((r) => setRouteStops(r?.stops || []))
+        .catch(() => setRouteStops([]));
+    }
+  }, [bus?.id, bus?.routeId]);
+
+  // Real-time synchronization via WebSocket with monotonic timestamp ordering guard
+  useEffect(() => {
+    if (!bus?.id) return;
+
+    const unsubBus = websocketService.subscribe(`/topic/bus/${bus.id}`, (incoming) => {
+      if (!incoming) return;
+      setBusLive((prev) => {
+        const existingTime = new Date(prev?.gpsTime || prev?.receivedAt || 0).getTime();
+        const incomingTime = new Date(incoming.gpsTime || incoming.receivedAt || 0).getTime();
+        if (incomingTime < existingTime) return prev; // Monotonic guard: discard out-of-order delayed update
+        return { ...prev, ...incoming };
+      });
+    });
+
+    const unsubAll = websocketService.subscribe("/topic/tracking", (incoming) => {
+      if (!incoming || String(incoming.busId) !== String(bus.id)) return;
+      setBusLive((prev) => {
+        const existingTime = new Date(prev?.gpsTime || prev?.receivedAt || 0).getTime();
+        const incomingTime = new Date(incoming.gpsTime || incoming.receivedAt || 0).getTime();
+        if (incomingTime < existingTime) return prev; // Monotonic guard
+        return { ...prev, ...incoming };
+      });
+    });
+
+    return () => {
+      if (typeof unsubBus === "function") unsubBus();
+      if (typeof unsubAll === "function") unsubAll();
+    };
+  }, [bus?.id]);
+
+  if (loading && students.length === 0) {
+    return <ContainerSpinner minHeight="350px" />;
+  }
 
   // Filter students based on parent search input
   const matchedStudents = useMemo(() => {
@@ -1650,6 +1822,8 @@ function FamilyDashboard() {
         s.parentName?.toLowerCase().includes(q)
     );
   }, [students, studentSearch]);
+
+  const isBusActive = (busLive?.speed && busLive.speed > 0) || busLive?.status === "ON_ROUTE" || bus?.status === "ON_ROUTE";
 
   return (
     <>
@@ -1794,36 +1968,114 @@ function FamilyDashboard() {
             to={bus ? `/tracking?studentId=${student?.id || ''}&busId=${bus?.id || ''}` : "/tracking"}
             className="btn btn-primary rounded-pill w-100 mt-3"
           >
-            <i className="bi bi-geo-alt-fill me-1" /> Track {student?.name ? `${student.name}'s bus` : "driver"} in realtime <i className="bi bi-arrow-up-right ms-1" />
+            <i className="bi bi-geo-alt-fill me-1" /> Full Screen Bus Tracking <i className="bi bi-arrow-up-right ms-1" />
           </Link>
         </div>
+
         <div className="panel journey-card">
           <div className="panel-heading">
             <div>
               <h5>Today's journey</h5>
-              <p>Latest real-time driver &amp; transport telemetry</p>
+              <p>Real-time driver GPS telemetry &amp; live verified position</p>
             </div>
-            <Status value={bus?.status || "OFFLINE"} />
+            <Status value={busLive?.status || (isBusActive ? "ON_ROUTE" : (bus?.status || "OFFLINE"))} />
           </div>
           <div className="journey-visual">
             <i className="bi bi-bus-front-fill" />
             <div>
               <b>{bus?.busNumber || bus?.number || "No bus assigned"}</b>
-              <span>{bus?.status === "ON_ROUTE" || bus?.status === "On Route" ? "Driver is currently on route" : "Driver is currently offline / at terminal"}</span>
+              <span>{isBusActive ? "Driver is currently on route with live GPS active" : "Vehicle is currently stationary / at campus terminal"}</span>
             </div>
           </div>
-          <div className="detail-line"><span>Assigned Driver</span><b>{bus?.driverName || "Assigned Driver"}</b></div>
           <div className="detail-line">
-            <span>Driver Realtime GPS</span>
-            <b style={{ color: bus?.status === "ON_ROUTE" ? "#15803d" : "#64748b" }}>
+            <span>Live GPS Telemetry</span>
+            <b style={{ color: isBusActive ? "#15803d" : "#64748b" }}>
               <i className="bi bi-broadcast me-1" />
-              {bus?.status === "ON_ROUTE" ? "Active (Broadcasting to you)" : "Standing by"}
+              {isBusActive
+                ? `Active at ${Math.round(busLive?.speed ?? 0)} km/h · ${busLive?.accuracyDescription || "±8m"}`
+                : (busLive?.isStale ? "Parked / Off-duty" : "Standing by")}
             </b>
           </div>
+          {busLive?.locationName && (
+            <div className="detail-line">
+              <span>Verified Location</span>
+              <b className="text-primary text-truncate" style={{ maxWidth: "220px" }} title={busLive.locationName}>
+                📍 {busLive.locationName}
+              </b>
+            </div>
+          )}
+          {busLive?.nearbyLandmark && (
+            <div className="detail-line">
+              <span>Nearby Landmark</span>
+              <b className="text-secondary text-truncate" style={{ maxWidth: "220px" }} title={busLive.nearbyLandmark}>
+                🏛️ {busLive.nearbyLandmark}
+              </b>
+            </div>
+          )}
+          <div className="detail-line">
+            <span>Last Updated</span>
+            <b className="text-muted">
+              {busLive?.gpsTime
+                ? new Date(busLive.gpsTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+                : "Standby"}
+            </b>
+          </div>
+          <div className="detail-line"><span>Assigned Driver</span><b>{bus?.driverName || "Assigned Driver"}</b></div>
           <div className="detail-line"><span>Route distance</span><b>{route?.distance || "12 km"}</b></div>
-          <div className="notice"><i className="bi bi-shield-check" /> Driver live location is securely streamed to parents and administrators in real-time.</div>
+          <div className="notice"><i className="bi bi-shield-check" /> Driver live location is securely streamed to parents and students in real-time.</div>
         </div>
       </div>
+
+      {/* Embedded Centralized Live Bus Map Widget (Parent / Student View) */}
+      {bus && (
+        <div className="panel mt-4 p-0 overflow-hidden" style={{ borderRadius: "14px", border: "1px solid #e2e8f0" }}>
+          <div className="p-3 bg-white border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div>
+              <h5 className="mb-0 fw-bold text-dark">
+                <i className="bi bi-map-fill text-primary me-2" />
+                Live Bus Location — {bus.busNumber || bus.number} ({bus.busName || "Campus Shuttle"})
+              </h5>
+              <small className="text-muted">
+                Synchronized directly with driver's real-time hardware GPS · Single Source of Truth
+              </small>
+            </div>
+            <div className="d-flex align-items-center gap-2">
+              <span className={`badge ${isBusActive ? "bg-success" : "bg-secondary"} px-3 py-2 rounded-pill`}>
+                {isBusActive ? "🔴 LIVE IN TRANSIT" : (busLive?.status || "STANDBY")}
+              </span>
+              <Link to={`/tracking?busId=${bus.id}`} className="btn btn-sm btn-outline-primary rounded-pill px-3">
+                Full Screen Tracking <i className="bi bi-arrow-up-right ms-1" />
+              </Link>
+            </div>
+          </div>
+          <div style={{ height: "360px", width: "100%", position: "relative" }}>
+            <LiveMap
+              buses={[{
+                ...bus,
+                latitude: busLive?.latitude ?? bus?.latitude ?? 17.4475,
+                longitude: busLive?.longitude ?? bus?.longitude ?? 78.3762,
+                rawLatitude: busLive?.rawLatitude ?? busLive?.latitude ?? bus?.latitude,
+                rawLongitude: busLive?.rawLongitude ?? busLive?.longitude ?? bus?.longitude,
+                snappedLatitude: busLive?.snappedLatitude,
+                snappedLongitude: busLive?.snappedLongitude,
+                isRoadMatched: busLive?.isRoadMatched,
+                roadName: busLive?.roadName,
+                speed: busLive?.speed ?? 0,
+                heading: busLive?.heading,
+                accuracy: busLive?.accuracy,
+                accuracyDescription: busLive?.accuracyDescription,
+                locationName: busLive?.locationName,
+                nearbyLandmark: busLive?.nearbyLandmark,
+                status: busLive?.status || bus?.status || "STANDBY",
+                gpsTime: busLive?.gpsTime,
+                isStale: busLive?.isStale,
+              }]}
+              selectedBusId={bus.id}
+              routeStops={routeStops}
+            />
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -2110,10 +2362,49 @@ function DriverDashboard() {
             Refresh Device GPS Fix Now
           </button>
           <Link to="/tracking" className="btn btn-sm btn-outline-secondary rounded-pill px-3 ms-auto">
-            View Live Map <i className="bi bi-arrow-up-right ms-1" />
+            View Full Live Map <i className="bi bi-arrow-up-right ms-1" />
           </Link>
         </div>
       </div>
+
+      {/* Driver Real-Time Road Alignment & Navigation Map */}
+      {bus && (
+        <div className="panel mt-4 p-0 overflow-hidden" style={{ borderRadius: "14px", border: "1px solid #e2e8f0" }}>
+          <div className="p-3 bg-white border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div>
+              <h5 className="mb-0 fw-bold text-dark">
+                <i className="bi bi-compass-fill text-primary me-2" />
+                Driver Live Navigation &amp; Road Alignment
+              </h5>
+              <small className="text-muted">
+                Your device GPS is road-matched and synchronized with parent and admin dashboards in real time
+              </small>
+            </div>
+            <span className="badge bg-primary px-3 py-2 rounded-pill">
+              {currentCoords?.speed ? `${Math.round(currentCoords.speed)} km/h` : "STANDBY"}
+            </span>
+          </div>
+          <div style={{ height: "340px", width: "100%", position: "relative" }}>
+            <LiveMap
+              buses={[{
+                ...bus,
+                latitude: currentCoords?.lat || 17.4475,
+                longitude: currentCoords?.lng || 78.3762,
+                rawLatitude: currentCoords?.lat || 17.4475,
+                rawLongitude: currentCoords?.lng || 78.3762,
+                speed: currentCoords?.speed || 0,
+                heading: currentCoords?.heading,
+                accuracy: currentCoords?.accuracy,
+                accuracyDescription: currentCoords?.accuracy != null ? `±${Math.round(currentCoords.accuracy)}m` : "Good",
+                locationName: currentCoords?.locationName,
+                nearbyLandmark: currentCoords?.nearbyLandmark,
+                status: tripInProgress ? "ON_ROUTE" : (bus?.status || "STANDBY"),
+              }]}
+              selectedBusId={bus?.id}
+            />
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -2305,6 +2596,9 @@ function Tracking() {
       setLiveLocations((prev) => {
         const idx = prev.findIndex((l) => String(l.busId) === String(incoming.busId));
         if (idx >= 0) {
+          const existingTime = new Date(prev[idx].gpsTime || prev[idx].receivedAt || 0).getTime();
+          const incomingTime = new Date(incoming.gpsTime || incoming.receivedAt || 0).getTime();
+          if (incomingTime < existingTime) return prev; // Monotonic guard: discard out-of-order delayed update
           const next = [...prev];
           next[idx] = { ...next[idx], ...incoming };
           return next;
@@ -2329,6 +2623,9 @@ function Tracking() {
       setLiveLocations((prev) => {
         const idx = prev.findIndex((l) => String(l.busId) === String(incoming.busId));
         if (idx >= 0) {
+          const existingTime = new Date(prev[idx].gpsTime || prev[idx].receivedAt || 0).getTime();
+          const incomingTime = new Date(incoming.gpsTime || incoming.receivedAt || 0).getTime();
+          if (incomingTime < existingTime) return prev; // Monotonic guard
           const next = [...prev];
           next[idx] = { ...next[idx], ...incoming };
           return next;

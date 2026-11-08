@@ -318,10 +318,15 @@ function Login() {
     setForgotSuccess("");
     setForgotLoading(true);
     try {
-      await authService.forgotPassword(forgotEmail.trim());
+      const res = await authService.forgotPassword(forgotEmail.trim());
       setForgotStep(2);
       setForgotCountdown(60);
-      setForgotSuccess("Verification code sent to " + forgotEmail.trim());
+      if (res?.data && /^\d{6}$/.test(res.data)) {
+        setForgotOtp(res.data);
+        setForgotSuccess(`Verification code [${res.data}] sent to ` + forgotEmail.trim());
+      } else {
+        setForgotSuccess("Verification code sent to " + forgotEmail.trim());
+      }
     } catch (err) {
       setForgotError(err.response?.data?.message || "Failed to send reset code. Please ensure the email is registered.");
     } finally {
@@ -397,10 +402,14 @@ function Login() {
     setOtpError("");
     setOtpSuccess("");
     try {
-      await authService.sendOtp(regEmail.trim());
+      const res = await authService.sendOtp(regEmail.trim());
       setOtpSent(true);
       setCountdown(60);
       setShowOtpModal(true); // Open Verification Popup Modal!
+      if (res?.data && /^\d{6}$/.test(res.data)) {
+        setOtp(res.data);
+        setOtpSuccess(`Code [${res.data}] generated & sent to your email`);
+      }
     } catch (err) {
       const msg = err.response?.data?.message || "Failed to send verification code. Please check the email address.";
       if (showOtpModal) {

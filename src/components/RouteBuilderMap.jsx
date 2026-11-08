@@ -220,45 +220,103 @@ export default function RouteBuilderMap({
       setIsSearching(true);
       try {
         const q = searchQuery.trim();
-        // 1. Try Mapbox Search Box Suggest API (superior for POIs like hostels, PGs, schools, campuses, buildings)
-        const suggestUrl = `https://api.mapbox.com/search/searchbox/v1/suggest?q=${encodeURIComponent(
-          q
-        )}&access_token=${MAPBOX_TOKEN}&session_token=${sessionToken}&country=IN&language=en&limit=8`;
-        const res = await fetch(suggestUrl);
-        const data = await res.json();
-
         let items = [];
-        if (data.suggestions && data.suggestions.length > 0) {
-          items = data.suggestions.map((s) => ({
-            id: s.mapbox_id || s.name + Math.random(),
-            name: s.name || s.name_preferred,
-            address:
-              s.full_address ||
-              s.place_formatted ||
-              (s.context?.place?.name ? `${s.name}, ${s.context.place.name}, India` : `${s.name}, India`),
-            mapboxId: s.mapbox_id,
-            featureType: s.feature_type,
-            category: s.poi_category?.[0] || s.feature_type || "location",
-            source: "searchbox",
-          }));
+
+        // 1. Try Mapbox Search Box Suggest API (superior for POIs like hostels, PGs, schools, campuses, buildings)
+        if (MAPBOX_TOKEN) {
+          try {
+            const suggestUrl = `https://api.mapbox.com/search/searchbox/v1/suggest?q=${encodeURIComponent(
+              q
+            )}&access_token=${MAPBOX_TOKEN}&session_token=${sessionToken}&country=IN&language=en&limit=8`;
+            const res = await fetch(suggestUrl);
+            const data = await res.json();
+
+            if (data.suggestions && data.suggestions.length > 0) {
+              items = data.suggestions.map((s) => ({
+                id: s.mapbox_id || s.name + Math.random(),
+                name: s.name || s.name_preferred,
+                address:
+                  s.full_address ||
+                  s.place_formatted ||
+                  (s.context?.place?.name ? `${s.name}, ${s.context.place.name}, India` : `${s.name}, India`),
+                mapboxId: s.mapbox_id,
+                featureType: s.feature_type,
+                category: s.poi_category?.[0] || s.feature_type || "location",
+                source: "searchbox",
+              }));
+            }
+          } catch (e) {
+            console.warn("Mapbox suggest error:", e);
+          }
         }
 
         // 2. If suggest returned 0 items, fallback to Mapbox Geocoding v5
+        if (items.length === 0 && MAPBOX_TOKEN) {
+          try {
+            const geoUrl = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(
+              q
+            )}.json?country=IN&access_token=${MAPBOX_TOKEN}&limit=8`;
+            const geoRes = await fetch(geoUrl);
+            const geoData = await geoRes.json();
+            if (geoData.features && geoData.features.length > 0) {
+              items = geoData.features.map((f) => ({
+                id: f.id,
+                name: f.text || f.place_name?.split(",")[0],
+                address: f.place_name || `${f.text}, India`,
+                coordinates: f.geometry?.coordinates, // [lng, lat]
+                category: f.place_type?.[0] || "place",
+                source: "geocoding",
+              }));
+            }
+          } catch (e) {
+            console.warn("Mapbox geocoding error:", e);
+          }
+        }
+
+        // 3. Fallback: Photon Komoot (OpenStreetMap with fuzzy search across India)
         if (items.length === 0) {
-          const geoUrl = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(
-            q
-          )}.json?country=IN&access_token=${MAPBOX_TOKEN}&limit=8`;
-          const geoRes = await fetch(geoUrl);
-          const geoData = await geoRes.json();
-          if (geoData.features && geoData.features.length > 0) {
-            items = geoData.features.map((f) => ({
-              id: f.id,
-              name: f.text || f.place_name?.split(",")[0],
-              address: f.place_name || `${f.text}, India`,
-              coordinates: f.geometry?.coordinates, // [lng, lat]
-              category: f.place_type?.[0] || "place",
-              source: "geocoding",
-            }));
+          try {
+            const pRes = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=8`);
+            const pData = await pRes.json();
+            if (pData.features && pData.features.length > 0) {
+              items = pData.features.map((f) => {
+                const props = f.properties || {};
+                const name = props.name || props.street || q;
+                const parts = [name, props.city, props.state, props.country].filter(Boolean);
+                return {
+                  id: "photon_" + (props.osm_id || Math.random()),
+                  name: name,
+                  address: parts.join(", "),
+                  coordinates: f.geometry?.coordinates, // [lng, lat]
+                  category: props.osm_value || props.type || "landmark",
+                  source: "osm",
+                };
+              });
+            }
+          } catch (e) {
+            console.warn("Photon fallback error:", e);
+          }
+        }
+
+        // 4. Fallback: Nominatim OpenStreetMap
+        if (items.length === 0) {
+          try {
+            const nRes = await fetch(
+              `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&countrycodes=in&limit=8`
+            );
+            const nData = await nRes.json();
+            if (Array.isArray(nData) && nData.length > 0) {
+              items = nData.map((n) => ({
+                id: "nom_" + (n.place_id || Math.random()),
+                name: n.display_name?.split(",")[0] || q,
+                address: n.display_name,
+                coordinates: [parseFloat(n.lon), parseFloat(n.lat)], // [lng, lat]
+                category: n.type || "place",
+                source: "osm",
+              }));
+            }
+          } catch (e) {
+            console.warn("Nominatim fallback error:", e);
           }
         }
 
@@ -283,7 +341,7 @@ export default function RouteBuilderMap({
       let fullAddress = item.address;
       let placeName = item.name;
 
-      if (item.source === "searchbox" && item.mapboxId) {
+      if (item.source === "searchbox" && item.mapboxId && MAPBOX_TOKEN) {
         // Retrieve full coordinates from Mapbox Search Box Retrieve API
         const retUrl = `https://api.mapbox.com/search/searchbox/v1/retrieve/${item.mapboxId}?access_token=${MAPBOX_TOKEN}&session_token=${sessionToken}`;
         const retRes = await fetch(retUrl);

@@ -13,6 +13,19 @@ import axios from 'axios';
  */
 export function getApiBaseUrl() {
   const envUrl = import.meta.env.VITE_API_BASE_URL;
+  const isRemoteDevice = typeof window !== 'undefined' && 
+                         window.location && 
+                         window.location.hostname !== 'localhost' && 
+                         window.location.hostname !== '127.0.0.1';
+
+  // If accessed from a phone/tablet on local Wi-Fi, never send localhost to the phone
+  if (isRemoteDevice && !window.location.hostname.includes('vercel.app')) {
+    if (envUrl && !envUrl.includes('localhost')) {
+      return envUrl.trim().replace(/\/+$/, '');
+    }
+    return `http://${window.location.hostname}:8080`;
+  }
+
   if (envUrl && typeof envUrl === 'string' && envUrl.trim() !== '') {
     return envUrl.trim().replace(/\/+$/, '');
   }
@@ -30,6 +43,18 @@ export function getApiBaseUrl() {
  */
 export function getWsBaseUrl() {
   const envWs = import.meta.env.VITE_WS_BASE_URL;
+  const isRemoteDevice = typeof window !== 'undefined' && 
+                         window.location && 
+                         window.location.hostname !== 'localhost' && 
+                         window.location.hostname !== '127.0.0.1';
+
+  if (isRemoteDevice && !window.location.hostname.includes('vercel.app')) {
+    if (envWs && !envWs.includes('localhost')) {
+      return envWs.trim().replace(/\/+$/, '');
+    }
+    return `ws://${window.location.hostname}:8080/ws`;
+  }
+
   if (envWs && typeof envWs === 'string' && envWs.trim() !== '') {
     return envWs.trim().replace(/\/+$/, '');
   }
@@ -39,10 +64,6 @@ export function getWsBaseUrl() {
   }
   if (apiBase.startsWith('http://')) {
     return apiBase.replace(/^http:\/\//i, 'ws://') + '/ws';
-  }
-  if (typeof window !== 'undefined' && window.location) {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    return `${protocol}//${window.location.host}/ws`;
   }
   return 'ws://localhost:8080/ws';
 }

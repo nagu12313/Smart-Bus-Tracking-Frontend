@@ -5,6 +5,93 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#102b46" />
     <title>EduTrack | School & College Bus Tracking</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="alternate icon" href="/favicon.ico" />
+
+    <!-- Google Fonts: Material Symbols Outlined, Plus Jakarta Sans, Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+
+    <!-- Tailwind Play CDN with Preflight disabled so it does not affect existing styles -->
+    <script>
+      window.tailwind = {
+        corePlugins: {
+          preflight: false,
+        },
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "on-primary-fixed": "#001946",
+              "on-error": "#ffffff",
+              "tertiary-fixed": "#6ffbbe",
+              "primary-fixed": "#dae2ff",
+              "on-secondary-container": "#fffbff",
+              "on-secondary": "#ffffff",
+              "inverse-surface": "#213145",
+              "primary-fixed-dim": "#b1c5ff",
+              "background": "#f8f9ff",
+              "surface-dim": "#cbdbf5",
+              "surface-bright": "#f8f9ff",
+              "on-background": "#0b1c30",
+              "surface-container-lowest": "#ffffff",
+              "inverse-on-surface": "#eaf1ff",
+              "on-tertiary": "#ffffff",
+              "primary": "#0050c0",
+              "outline": "#727786",
+              "surface-variant": "#d3e4fe",
+              "error": "#ba1a1a",
+              "surface-tint": "#0057ce",
+              "surface-container": "#e5eeff",
+              "on-surface-variant": "#424654",
+              "on-primary-container": "#f3f4ff",
+              "surface-container-low": "#eff4ff",
+              "on-tertiary-container": "#d3ffe5",
+              "secondary": "#4b41e1",
+              "secondary-fixed": "#e2dfff",
+              "secondary-container": "#645efb",
+              "primary-container": "#1a68ea",
+              "on-secondary-fixed-variant": "#3323cc",
+              "secondary-fixed-dim": "#c3c0ff",
+              "inverse-primary": "#b1c5ff",
+              "on-primary": "#ffffff",
+              "surface": "#f8f9ff",
+              "on-primary-fixed-variant": "#00419e",
+              "on-secondary-fixed": "#0f0069",
+              "on-error-container": "#93000a",
+              "surface-container-highest": "#d3e4fe",
+              "tertiary-fixed-dim": "#4edea3",
+              "on-tertiary-fixed": "#002113",
+              "tertiary": "#006444",
+              "on-tertiary-fixed-variant": "#005236",
+              "error-container": "#ffdad6",
+              "tertiary-container": "#008058",
+              "surface-container-high": "#dce9ff",
+              "outline-variant": "#c2c6d7",
+              "on-surface": "#0b1c30"
+            },
+            fontFamily: {
+              "title-sm": ["Plus Jakarta Sans", "sans-serif"],
+              "headline-md": ["Plus Jakarta Sans", "sans-serif"],
+              "telemetry-mono": ["Inter", "sans-serif"],
+              "label-sm": ["Inter", "sans-serif"],
+              "label-md": ["Inter", "sans-serif"],
+              "body-sm": ["Inter", "sans-serif"],
+              "body-md": ["Inter", "sans-serif"],
+            }
+          }
+        }
+      };
+      if (typeof console !== 'undefined' && console.warn) {
+        const _origWarn = console.warn;
+        console.warn = function(...args) {
+          if (args[0] && typeof args[0] === 'string' && args[0].includes('cdn.tailwindcss.com')) return;
+          _origWarn.apply(console, args);
+        };
+      }
+    </script>
+    <script src="https://cdn.tailwindcss.com"></script>
 
     <!-- Mapbox GL JS (Map Engine) -->
     <script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>

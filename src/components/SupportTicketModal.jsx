@@ -828,7 +828,6 @@ export default function SupportTicketModal({
                   className="btn btn-sm btn-primary d-flex align-items-center gap-2 px-4"
                   disabled={submitting}
                 >
-                  {submitting && <InlineSpinner size="14px" />}
                   {submitting ? "Submitting Request..." : "Submit Support Request"}
                 </button>
               </div>
@@ -901,7 +900,7 @@ export default function SupportTicketModal({
                         disabled={emailingReport}
                         title="Email ticket report to bollanagu6868@gmail.com"
                       >
-                        {emailingReport ? <InlineSpinner size="12px" /> : <i className="bi bi-envelope-fill" />}
+                        <i className="bi bi-envelope-fill" />
                         {emailingReport ? "Sending..." : "Email to bollanagu6868"}
                       </button>
                     </div>
@@ -1369,7 +1368,6 @@ export default function SupportTicketModal({
                       className="btn btn-sm btn-primary d-flex align-items-center gap-1 px-3"
                       disabled={sendingReply}
                     >
-                      {sendingReply && <InlineSpinner size="12px" />}
                       <i className="bi bi-send-fill" /> Send Reply
                     </button>
                   </div>

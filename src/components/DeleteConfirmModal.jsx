@@ -1,5 +1,4 @@
 import React from "react";
-import { InlineSpinner } from "./Spinner";
 
 /**
  * Modern, accessible Delete Confirmation Modal.
@@ -126,17 +125,8 @@ export default function DeleteConfirmModal({
             onClick={onConfirm}
             disabled={isDeleting}
           >
-            {isDeleting ? (
-              <>
-                <InlineSpinner size="14px" color="#ffffff" />
-                <span>Deleting...</span>
-              </>
-            ) : (
-              <>
-                <i className="bi bi-trash3-fill" />
-                <span>{confirmLabel}</span>
-              </>
-            )}
+            <i className="bi bi-trash3-fill" />
+            <span>{isDeleting ? "Deleting..." : confirmLabel}</span>
           </button>
         </div>
       </div>

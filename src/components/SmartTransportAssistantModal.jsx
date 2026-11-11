@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import transportChatService from "../services/transportChatService";
 
 function parseBold(text) {
@@ -74,50 +74,80 @@ export default function SmartTransportAssistantModal({
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [initData, setInitData] = useState(null);
   const [error, setError] = useState("");
   const messagesEndRef = useRef(null);
 
-  const WELCOME_MESSAGE = {
-    id: "welcome-system",
-    sender: "assistant",
-    message: "Welcome to Smart Transport Assistant! Which bus would you like assistance with? Please enter your bus name or bus number.",
-    timestamp: new Date().toISOString(),
-  };
-
-  const SUGGESTED_QUESTIONS = [
-    "AP07 AB 1234",
-    "Where is my bus?",
-    "Track my bus",
-    "Who is my driver?",
-    "What is my bus ETA?",
-    "What is my next stop?",
-    "Is my bus moving?",
-  ];
-
-  // Load chat history or initialize with welcome message
+  // Load dynamic runtime role context & chat history on modal open
   useEffect(() => {
     if (!isOpen) return;
-    loadHistory();
+    loadInitAndHistory();
   }, [isOpen]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
-  async function loadHistory() {
+  async function loadInitAndHistory() {
     setLoadingHistory(true);
     setError("");
     try {
+      // 1. Fetch dynamic role-specific runtime context & suggestions
+      let init = null;
+      try {
+        init = await transportChatService.getInitContext();
+        setInitData(init);
+      } catch (e) {
+        console.warn("Failed to load transport chat init context:", e);
+      }
+
+      // 2. Fetch stored chat history
       const history = await transportChatService.getHistory();
       if (Array.isArray(history) && history.length > 0) {
         setMessages(history);
+      } else if (init && init.welcomeMessage) {
+        setMessages([
+          {
+            id: "welcome-system",
+            sender: "assistant",
+            message: init.welcomeMessage,
+            timestamp: new Date().toISOString(),
+          },
+        ]);
       } else {
-        setMessages([WELCOME_MESSAGE]);
+        setMessages([
+          {
+            id: "welcome-fallback",
+            sender: "assistant",
+            message: `Hello ${currentUser?.name || "there"}! I am your Smart Transport AI Assistant. How can I assist you with bus tracking, routes, or timings today?`,
+            timestamp: new Date().toISOString(),
+          },
+        ]);
       }
     } catch (err) {
-      setMessages([WELCOME_MESSAGE]);
+      console.warn("Error loading chat history:", err);
     } finally {
       setLoadingHistory(false);
+    }
+  }
+
+  async function handleClearHistory() {
+    try {
+      await transportChatService.clearHistory();
+      if (initData?.welcomeMessage) {
+        setMessages([
+          {
+            id: "welcome-cleared",
+            sender: "assistant",
+            message: initData.welcomeMessage,
+            timestamp: new Date().toISOString(),
+          },
+        ]);
+      } else {
+        setMessages([]);
+      }
+    } catch (err) {
+      console.warn("Failed to clear chat history:", err);
     }
   }
 
@@ -223,12 +253,29 @@ export default function SmartTransportAssistantModal({
                 Smart Transport Assistant
               </div>
               <div style={{ fontSize: "11px", color: "#e0edff" }}>
-                {currentUser?.name ? `${currentUser.name} (${currentUser.role || "User"})` : "Campus Transit AI"}
+                {initData?.contextSummary || (currentUser?.name ? `${currentUser.name} (${currentUser.role || "User"})` : "Campus Transit AI")}
               </div>
             </div>
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <button
+              type="button"
+              onClick={handleClearHistory}
+              title="Clear chat history"
+              style={{
+                background: "transparent",
+                border: "1px solid rgba(255,255,255,0.4)",
+                color: "#ffffff",
+                fontSize: "11px",
+                padding: "2px 8px",
+                cursor: "pointer",
+                borderRadius: "0px",
+                lineHeight: "1.4",
+              }}
+            >
+              Clear
+            </button>
             <button
               type="button"
               onClick={onClose}
@@ -316,39 +363,41 @@ export default function SmartTransportAssistantModal({
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Minimal Suggested Questions (border-radius: 0px) */}
-        <div
-          style={{
-            background: "#f1f5f9",
-            borderTop: "1px solid #e2e8f0",
-            padding: "8px 12px",
-            display: "flex",
-            gap: "6px",
-            overflowX: "auto",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {SUGGESTED_QUESTIONS.map((q, idx) => (
-            <button
-              key={idx}
-              type="button"
-              onClick={() => handleSend(q)}
-              disabled={loading}
-              style={{
-                background: "#ffffff",
-                border: "1px solid #cbd5e1",
-                color: "#1e293b",
-                fontSize: "11px",
-                padding: "4px 8px",
-                borderRadius: "0px",
-                cursor: "pointer",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {q}
-            </button>
-          ))}
-        </div>
+        {/* Dynamic Suggested Questions from Runtime Role Engine */}
+        {Array.isArray(initData?.suggestedQuestions) && initData.suggestedQuestions.length > 0 && (
+          <div
+            style={{
+              background: "#f1f5f9",
+              borderTop: "1px solid #e2e8f0",
+              padding: "8px 12px",
+              display: "flex",
+              gap: "6px",
+              overflowX: "auto",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {initData.suggestedQuestions.map((q, idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => handleSend(q)}
+                disabled={loading}
+                style={{
+                  background: "#ffffff",
+                  border: "1px solid #cbd5e1",
+                  color: "#1e293b",
+                  fontSize: "11px",
+                  padding: "4px 8px",
+                  borderRadius: "0px",
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {q}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Minimal Input Bar (border-radius: 0px) */}
         <div
@@ -362,7 +411,19 @@ export default function SmartTransportAssistantModal({
         >
           <input
             type="text"
-            placeholder="Enter bus name or number (e.g., AP07 AB 1234) or ask a question..."
+            placeholder={
+              initData?.identifiedBusNumber
+                ? `Ask about ${initData.identifiedBusNumber}${initData.identifiedBusName ? ` (${initData.identifiedBusName})` : ""}, route, ETA, or driver...`
+                : (currentUser?.role || initData?.userRole || "").toUpperCase() === "ADMIN"
+                ? "Ask about fleet status, active buses, routes, moving vehicles, or any bus number..."
+                : (currentUser?.role || initData?.userRole || "").toUpperCase() === "DRIVER"
+                ? "Ask about your assigned route, stops, students, or schedule..."
+                : (currentUser?.role || initData?.userRole || "").toUpperCase() === "PARENT"
+                ? "Ask about your child's bus location, ETA, or driver details..."
+                : (currentUser?.role || initData?.userRole || "").toUpperCase() === "STUDENT"
+                ? "Ask about your bus arrival time, route, or live status..."
+                : "Ask about bus routes, schedules, live tracking, or ETAs..."
+            }
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {

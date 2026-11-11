@@ -1,35 +1,11 @@
 import React from "react";
 import { Bus } from "lucide-react";
 
-export interface RouteInfo {
-  id: string;
-  route: string; // e.g. "Guntur Central Route" or "Route 02"
-  busNumber: string; // e.g. "AP-07-AB-1234" or "NY 4223"
-  from: string;
-  to: string;
-  speed: number;
-  eta: string;
-  status: "active" | "parked" | "inactive";
-  progress?: number;
-  driverName?: string;
-  driverPhone?: string;
-  locationName?: string;
-  nearbyLandmark?: string;
-  accuracyDescription?: string;
-  isRoadMatched?: boolean;
-}
-
-interface RouteCardProps {
-  data: RouteInfo;
-  selected?: boolean;
-  onSelect?: (id: string) => void;
-}
-
 /**
  * Bulletproof SVG Timeline component
  * Vector rendering: Origin dot (Blue) -> Solid blue travelled line -> Green live bus indicator -> Dotted remaining line -> Destination dot
  */
-function Timeline({ progress = 0.5, dark = false }: { progress: number; dark: boolean }) {
+function Timeline({ progress = 0.5, dark = false }) {
   // Clamped between 0.08 and 0.92 so the bus marker stays cleanly within the timeline
   const clamped = Math.max(0.08, Math.min(0.92, progress));
   const busY = 8 + 48 * clamped;
@@ -66,7 +42,7 @@ function Timeline({ progress = 0.5, dark = false }: { progress: number; dark: bo
   );
 }
 
-export function RouteCard({ data, selected = false, onSelect }: RouteCardProps) {
+export function RouteCard({ data, selected = false, onSelect }) {
   const { id, route, busNumber, from, to, speed, eta, status } = data;
   const isParked =
     (status === "parked" || status === "inactive" || String(status).toLowerCase() === "parked") &&

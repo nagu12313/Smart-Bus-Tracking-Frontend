@@ -10,11 +10,13 @@ import tripService from "./services/tripService";
 import websocketService from "./services/websocketService";
 import api from "./services/api";
 import LiveMap from "./components/LiveMap";
-import routingService from "./services/routingService";
+import routingService, { calculateEta } from "./services/routingService";
 import RouteBuilderMap from "./components/RouteBuilderMap";
 import RouteListPanel from "./components/RouteListPanel";
 import SmartTransportAssistantModal from "./components/SmartTransportAssistantModal";
 import DeleteConfirmModal from "./components/DeleteConfirmModal";
+import DriverTripsPortal from "./components/DriverTripsPortal";
+import MockLiveTrackingTestScreen from "./components/MockLiveTrackingTestScreen";
 import { GlobalSpinner, ContainerSpinner, InlineSpinner } from "./components/Spinner";
 import { LoadingProvider, useLoading } from "./context/LoadingContext";
 
@@ -84,6 +86,7 @@ function App() {
   }, []);
 
   // Fast parallel load on authentication or mount
+  const hasLoadedRef = useRef(false);
   const loadData = useCallback(async (silent = true) => {
     if (!authService.isAuthenticated()) return;
     const reqConfig = silent ? { skipLoading: true } : {};
@@ -105,6 +108,7 @@ function App() {
           if (statsData) setStats(statsData);
         }).catch(() => {});
       }
+      hasLoadedRef.current = true;
     } catch (err) {
       console.error("Failed to load backend data:", err);
     } finally {
@@ -112,12 +116,12 @@ function App() {
     }
   }, [user?.role]);
 
-  // Load data immediately whenever user is authenticated or mounts
+  // Load data once when user is authenticated or on app mount
   useEffect(() => {
-    if (authService.isAuthenticated()) {
+    if (authService.isAuthenticated() && !hasLoadedRef.current) {
       loadData(true);
     }
-  }, [user?.id, user?.role, loadData]);
+  }, [user?.id, loadData]);
 
   const value = {
     user,
@@ -166,11 +170,11 @@ function Landing() {
         <Link to="/" className="brand">
           <span className="brand-icon"><i className="bi bi-bus-front-fill" /></span> EduTrack
         </Link>
-        <div className="d-flex gap-2">
-          <Link className="btn btn-outline-light rounded-pill px-3" to="/register">
+        <div className="landing-auth-buttons">
+          <Link className="landing-btn-signup" to="/register">
             Sign up
           </Link>
-          <Link className="btn btn-light rounded-pill px-4" to="/login">
+          <Link className="landing-btn-signin" to="/login">
             Sign in <i className="bi bi-arrow-right ms-1" />
           </Link>
         </div>
@@ -180,11 +184,13 @@ function Landing() {
           <span className="eyebrow"><i className="bi bi-geo-alt-fill me-2" />SMART CAMPUS TRANSPORT</span>
           <h1>Every journey.<br /><span>Safer and smarter.</span></h1>
           <p>One connected platform for schools, colleges, parents and students to stay informed about campus transportation.</p>
-          <div className="d-flex gap-3 flex-wrap">
-            <Link to="/login" className="btn btn-primary btn-lg rounded-pill px-4">
+          <div className="hero-cta-group">
+            <Link to="/login" className="btn btn-primary btn-lg rounded-pill px-4 hero-cta-btn">
               Explore dashboard <i className="bi bi-arrow-up-right ms-2" />
             </Link>
-            <Link to="/register" className="btn btn-outline-light btn-lg rounded-pill px-4">Create account</Link>
+            <Link to="/register" className="btn btn-outline-light btn-lg rounded-pill px-4 hero-cta-btn">
+              Create account
+            </Link>
           </div>
           <div className="hero-proof">
             <span><i className="bi bi-shield-check" /> Safer journeys</span>
@@ -445,7 +451,7 @@ function Login() {
       const { user } = await authService.login(email.trim(), password);
       setUser(user);
       if (refreshData) {
-        refreshData(false).catch(() => {});
+        refreshData(true).catch(() => {});
       }
       nav("/dashboard");
     } catch (err) {
@@ -481,7 +487,7 @@ function Login() {
       const { user } = await authService.register(regName.trim(), regEmail.trim(), regPassword, regRole, otp.trim());
       setUser(user);
       if (refreshData) {
-        refreshData(false).catch(() => {});
+        refreshData(true).catch(() => {});
       }
       nav("/dashboard");
     } catch (err) {
@@ -507,6 +513,17 @@ function Login() {
       </div>
 
       <div className="login-main">
+        {/* Mobile Header with brand & back button */}
+        <div className="login-mobile-header">
+          <Link to="/" className="login-mobile-brand">
+            <span className="brand-icon"><i className="bi bi-bus-front-fill" /></span>
+            <span className="login-mobile-title">EduTrack</span>
+          </Link>
+          <Link to="/" className="login-mobile-back">
+            <i className="bi bi-arrow-left me-1" /> Home
+          </Link>
+        </div>
+
         <div className="auth-stage">
           {/* Animated Container */}
           <div key={isRegister ? "register-card" : "signin-card"} className={`login-card ${animClass}`}>
@@ -554,21 +571,80 @@ function Login() {
                   onChange={(e) => setPassword(e.target.value)}
                   required
                 />
-                <button className="btn btn-primary btn-lg w-100 rounded-pill mt-2" disabled={loading}>
-                  {loading ? <InlineSpinner /> : <>Sign in <i className="bi bi-arrow-right ms-2" /></>}
+                <button className="btn btn-primary btn-auth-submit w-100 rounded-pill mt-2" disabled={loading}>
+                  Sign in <i className="bi bi-arrow-right ms-2" />
                 </button>
 
-                <div className="text-center mt-4 pt-2 border-top">
+                {/* Quick Demo Credentials for Testing */}
+                <div className="mt-3 p-2 bg-light rounded-3 border">
+                  <div className="d-flex justify-content-between align-items-center mb-1">
+                    <span className="text-muted fw-bold" style={{ fontSize: "11px", letterSpacing: "0.5px" }}>
+                      <i className="bi bi-lightning-charge-fill text-warning me-1" />
+                      QUICK DEMO ACCOUNTS
+                    </span>
+                  </div>
+                  <div className="auth-demo-grid">
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline-warning text-dark py-1 px-2 fw-semibold"
+                      style={{ fontSize: "11px" }}
+                      onClick={() => {
+                        setEmail("driver@edutrack.com");
+                        setPassword("driver123");
+                      }}
+                      title="Driver (Assigned Trips & GPS Live Tracking)"
+                    >
+                      <i className="bi bi-bus-front me-1 text-primary" /> Driver
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline-danger text-dark py-1 px-2 fw-semibold"
+                      style={{ fontSize: "11px" }}
+                      onClick={() => {
+                        setEmail("mocktest@edutrack.com");
+                        setPassword("mocktest123");
+                      }}
+                      title="Mock Live Tracking Test Screen (Isolated Mode)"
+                    >
+                      <i className="bi bi-cpu-fill me-1 text-danger" /> Mock Tester
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline-primary text-dark py-1 px-2 fw-semibold"
+                      style={{ fontSize: "11px" }}
+                      onClick={() => {
+                        setEmail("admin@edutrack.com");
+                        setPassword("admin123");
+                      }}
+                      title="Transport Admin"
+                    >
+                      <i className="bi bi-shield-lock me-1 text-primary" /> Admin
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline-success text-dark py-1 px-2 fw-semibold"
+                      style={{ fontSize: "11px" }}
+                      onClick={() => {
+                        setEmail("parent@edutrack.com");
+                        setPassword("parent123");
+                      }}
+                      title="Parent Tracking"
+                    >
+                      <i className="bi bi-people me-1 text-success" /> Parent
+                    </button>
+                  </div>
+                </div>
+
+                <div className="text-center mt-4 pt-2 border-top auth-bottom-switch">
                   <span className="text-muted" style={{ fontSize: "14px" }}>
                     Don't have an account?{" "}
                   </span>
                   <button
                     type="button"
-                    className="btn btn-link p-0 text-primary fw-bold text-decoration-none"
-                    style={{ fontSize: "14px" }}
+                    className="btn btn-link p-0 text-primary fw-bold text-decoration-none auth-link-btn"
                     onClick={switchToRegister}
                   >
-                    Create Account <i className="bi bi-arrow-right ms-1" />
+                    Sign Up <i className="bi bi-arrow-right ms-1" />
                   </button>
                 </div>
               </form>
@@ -615,10 +691,7 @@ function Login() {
                       onClick={() => handleSendOtp(false)}
                     >
                       {sendingOtp ? (
-                        <>
-                          <span className="spinner-border spinner-border-sm me-1" />
-                          Sending...
-                        </>
+                        "Sending..."
                       ) : countdown > 0 ? (
                         `Resend in ${countdown}s`
                       ) : otpSent ? (
@@ -656,20 +729,19 @@ function Login() {
                 </select>
 
                 <button
-                  className="btn btn-primary btn-lg w-100 rounded-pill mt-2"
+                  className="btn btn-primary btn-auth-submit w-100 rounded-pill mt-2"
                   disabled={loading || !emailVerified}
                 >
-                  {loading ? <InlineSpinner /> : <>Create Account <i className="bi bi-arrow-right ms-2" /></>}
+                  Create Account <i className="bi bi-arrow-right ms-2" />
                 </button>
 
-                <div className="text-center mt-4 pt-2 border-top">
+                <div className="text-center mt-4 pt-2 border-top auth-bottom-switch">
                   <span className="text-muted" style={{ fontSize: "14px" }}>
                     Already have an account?{" "}
                   </span>
                   <button
                     type="button"
-                    className="btn btn-link p-0 text-primary fw-bold text-decoration-none"
-                    style={{ fontSize: "14px" }}
+                    className="btn btn-link p-0 text-primary fw-bold text-decoration-none auth-link-btn"
                     onClick={switchToSignIn}
                   >
                     Sign In <i className="bi bi-arrow-right ms-1" />
@@ -763,13 +835,7 @@ function Login() {
                 disabled={otp.length !== 6 || verifyingOtp}
                 onClick={handleVerifyOtp}
               >
-                {verifyingOtp ? (
-                  <InlineSpinner />
-                ) : (
-                  <>
-                    Verify Code <i className="bi bi-check-lg ms-1" />
-                  </>
-                )}
+                {verifyingOtp ? "Verifying..." : <>Verify Code <i className="bi bi-check-lg ms-1" /></>}
               </button>
 
               {/* Resend Action */}
@@ -879,7 +945,7 @@ function Login() {
                     disabled={!forgotEmail.trim() || !forgotEmail.includes("@") || forgotLoading}
                     onClick={handleSendForgotOtp}
                   >
-                    {forgotLoading ? <InlineSpinner /> : "Send Reset Code"}
+                    {forgotLoading ? "Sending..." : "Send Reset Code"}
                   </button>
                   <div className="text-center mt-3">
                     <button
@@ -951,7 +1017,7 @@ function Login() {
                     disabled={forgotOtp.length !== 6 || !forgotNewPassword || forgotLoading}
                     onClick={handleResetPassword}
                   >
-                    {forgotLoading ? <InlineSpinner /> : "Reset Password"}
+                    {forgotLoading ? "Resetting..." : "Reset Password"}
                   </button>
 
                   <div className="d-flex justify-content-between align-items-center">
@@ -985,8 +1051,10 @@ function Login() {
 
 // Navigation items filtered by role
 const navItems = [
-  ["dashboard", "Dashboard", "bi-grid-1x2-fill", ["ADMIN", "DRIVER", "PARENT", "STUDENT", "Admin", "Driver", "Parent", "Student"]],
-  ["tracking",  "Live Tracking", "bi-geo-alt-fill",  ["ADMIN", "DRIVER", "PARENT", "STUDENT", "Admin", "Driver", "Parent", "Student"]],
+  ["dashboard", "Dashboard", "bi-grid-1x2-fill", ["ADMIN", "PARENT", "STUDENT", "Admin", "Parent", "Student"]],
+  ["tracking",  "Live Tracking", "bi-geo-alt-fill",  ["ADMIN", "PARENT", "STUDENT", "Admin", "Parent", "Student"]],
+  ["driver-trips", "My Assigned Trips", "bi-bus-front-fill", ["DRIVER", "Driver"]],
+  ["mock-test", "Mock Live Tracking", "bi-play-circle-fill", ["TEST_USER", "Test_User"]],
   ["buses",     "Bus Management", "bi-bus-front-fill", ["ADMIN", "SCHOOL_ADMIN", "Admin"]],
   ["drivers",   "Driver Management", "bi-person-badge-fill", ["ADMIN", "SCHOOL_ADMIN", "Admin"]],
   ["students",  "Student Management", "bi-mortarboard-fill", ["ADMIN", "SCHOOL_ADMIN", "Admin"]],
@@ -1009,6 +1077,7 @@ function getAvatarRoleClass(role) {
   if (r === "DRIVER") return "avatar-role-driver";
   if (r === "PARENT") return "avatar-role-parent";
   if (r === "STUDENT") return "avatar-role-student";
+  if (r === "TEST_USER") return "avatar-role-admin";
   return "avatar-role-default";
 }
 
@@ -1037,76 +1106,17 @@ function ProtectedLayout() {
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showSupportModal, setShowSupportModal] = useState(false);
   const [uploadToast, setUploadToast] = useState("");
+  const [isRouteBuilderOpen, setIsRouteBuilderOpen] = useState(false);
   const dropdownRef = useRef(null);
   const fileInputRef = useRef(null);
   const nav = useNavigate();
   const location = useLocation();
 
-  // Reset any in-flight global loading on route transition, auto-close drawer & keep active view fresh
+  // Reset any in-flight global loading on route transition & auto-close mobile drawer
   useEffect(() => {
     api.resetLoading();
     setOpen(false);
-    if (authService.isAuthenticated()) {
-      if (location.pathname === "/buses") {
-        if (refreshBuses) refreshBuses(true);
-        if (refreshDrivers) refreshDrivers(true);
-        if (refreshRoutes) refreshRoutes(true);
-      } else if (location.pathname === "/drivers") {
-        if (refreshDrivers) refreshDrivers(true);
-      } else if (location.pathname === "/students") {
-        if (refreshStudents) refreshStudents(true);
-        if (refreshBuses) refreshBuses(true);
-      } else if (location.pathname === "/routes") {
-        if (refreshRoutes) refreshRoutes(true);
-      } else if (location.pathname === "/dashboard") {
-        if (refreshData) refreshData(true);
-      }
-    }
-  }, [location.pathname, refreshBuses, refreshDrivers, refreshStudents, refreshRoutes, refreshData]);
-
-  // Automatic Background Geolocation Watcher for DRIVER upon login
-  // Streams real device GPS coordinates to Spring Boot /api/tracking/location
-  useEffect(() => {
-    if (!user || user.role !== "DRIVER") return;
-    if (!("geolocation" in navigator)) return;
-
-    let watchId = null;
-    const myDriver = drivers.find((d) => d.email === user.email || d.name === user.name) || drivers[0];
-    const myBus = buses.find((b) => b.driverId === myDriver?.id) || buses[0];
-    if (!myBus) return;
-
-    watchId = navigator.geolocation.watchPosition(
-      async (pos) => {
-        try {
-          const { latitude, longitude, speed, heading, accuracy } = pos.coords;
-          const kmh = speed != null && speed > 0 ? Number((speed * 3.6).toFixed(1)) : 0.0;
-          await api.post(
-            "/api/tracking/location",
-            {
-              busId: myBus.id,
-              latitude: Number(latitude.toFixed(6)),
-              longitude: Number(longitude.toFixed(6)),
-              speed: kmh,
-              ...(heading != null && !isNaN(heading) ? { heading: Number(heading.toFixed(1)) } : {}),
-              ...(accuracy != null && !isNaN(accuracy) ? { accuracy: Number(accuracy.toFixed(1)) } : {}),
-              provider: "BROWSER_DEVICE_GPS",
-            },
-            { skipLoading: true }
-          );
-        } catch {
-          // silent background sync
-        }
-      },
-      (err) => {
-        console.warn("Driver background GPS watch error:", err.message);
-      },
-      { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 }
-    );
-
-    return () => {
-      if (watchId != null) navigator.geolocation.clearWatch(watchId);
-    };
-  }, [user, drivers, buses]);
+  }, [location.pathname]);
 
   // Click outside and escape key handling for profile dropdown
   useEffect(() => {
@@ -1371,14 +1381,16 @@ function ProtectedLayout() {
             )}
           </div>
         </header>
-        <div className={`page-content ${location.pathname === "/tracking" ? "page-content-flush" : ""}`}>
+        <div className={`page-content ${location.pathname === "/tracking" || (location.pathname === "/routes" && isRouteBuilderOpen) ? "page-content-flush" : ""}`}>
           <Routes>
             <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/driver-trips" element={<Dashboard />} />
+            <Route path="/mock-test" element={<Dashboard />} />
             <Route path="/tracking" element={<Tracking />} />
             <Route path="/buses" element={<Buses />} />
             <Route path="/drivers" element={<Drivers />} />
             <Route path="/students" element={<Students />} />
-            <Route path="/routes" element={<RoutesPage />} />
+            <Route path="/routes" element={<RoutesPage onBuilderStateChange={setIsRouteBuilderOpen} />} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </div>
@@ -1540,18 +1552,14 @@ function Status({ value }) {
 // ADMIN DASHBOARD — Centralized Live Fleet Telemetry & Shared Map
 // ============================================================
 function Dashboard() {
-  const { user, buses, drivers, students, routes, stats, loading, refreshData } = useStore();
+  const { user, buses, drivers, students, routes, stats, loading } = useStore();
   const [liveLocationsMap, setLiveLocationsMap] = useState({});
 
   const role = user.role?.toUpperCase();
 
-  // Centralized single source of truth: fetch all latest locations and ensure data is fresh on mount
+  // Centralized single source of truth: fetch all latest locations on mount
   useEffect(() => {
-    if (role === "PARENT" || role === "STUDENT" || role === "DRIVER") return;
-
-    if (refreshData) {
-      refreshData(true);
-    }
+    if (role === "PARENT" || role === "STUDENT" || role === "DRIVER" || role === "TEST_USER") return;
 
     trackingService
       .getAllLatest()
@@ -1581,8 +1589,9 @@ function Dashboard() {
     };
   }, [role]);
 
+  if (role === "TEST_USER") return <MockLiveTrackingTestScreen />;
   if (role === "PARENT" || role === "STUDENT") return <FamilyDashboard />;
-  if (role === "DRIVER") return <DriverDashboard />;
+  if (role === "DRIVER") return <DriverTripsPortal user={user} />;
 
   if (loading && buses.length === 0 && !stats) {
     return <ContainerSpinner minHeight="350px" />;
@@ -1596,36 +1605,53 @@ function Dashboard() {
   const totalStudents = stats?.totalStudents ?? students.length;
   const totalDrivers = stats?.totalDrivers ?? drivers.length;
 
-  // Adapt buses for shared LiveMap component
-  const adminMapBuses = buses.map((b) => {
-    const live = liveLocationsMap[b.id];
-    const isFresh = live && !live.isStale && live.gpsTime && (Date.now() - new Date(live.gpsTime).getTime()) < 180000;
-    return {
-      ...b,
-      busId: b.id,
-      busNumber: b.busNumber || b.number || `Bus ${b.id}`,
-      busName: b.busName || b.name || "School Bus",
-      driverName: b.driverName || "Assigned Driver",
-      driverPhone: b.driverPhone || "",
-      status: isFresh ? (live.status || b.status) : (b.status || "PARKED"),
-      latitude: live?.latitude ?? b.latitude ?? 17.4475,
-      longitude: live?.longitude ?? b.longitude ?? 78.3762,
-      rawLatitude: live?.rawLatitude ?? live?.latitude ?? b.latitude,
-      rawLongitude: live?.rawLongitude ?? live?.longitude ?? b.longitude,
-      snappedLatitude: live?.snappedLatitude,
-      snappedLongitude: live?.snappedLongitude,
-      isRoadMatched: live?.isRoadMatched,
-      roadName: live?.roadName,
-      accuracy: live?.accuracy,
-      accuracyDescription: live?.accuracyDescription,
-      locationName: live?.locationName,
-      nearbyLandmark: live?.nearbyLandmark,
-      speed: isFresh ? (live.speed ?? 0) : 0,
-      heading: isFresh && live.heading != null ? live.heading : null,
-      gpsTime: live?.gpsTime ?? null,
-      isStale: !isFresh,
-    };
-  });
+  // Adapt buses for shared LiveMap component — strictly active vehicles only (parked hidden)
+  const adminMapBuses = buses
+    .map((b) => {
+      const live = liveLocationsMap[b.id];
+      const isFresh = live && !live.isStale && live.gpsTime && (Date.now() - new Date(live.gpsTime).getTime()) < 180000;
+      return {
+        ...b,
+        busId: b.id,
+        busNumber: b.busNumber || b.number || `Bus ${b.id}`,
+        busName: b.busName || b.name || "School Bus",
+        driverName: b.driverName || "Assigned Driver",
+        driverPhone: b.driverPhone || "",
+        status: isFresh ? (live.status || b.status) : (b.status || "PARKED"),
+        latitude: live?.latitude ?? b.latitude ?? 17.4475,
+        longitude: live?.longitude ?? b.longitude ?? 78.3762,
+        rawLatitude: live?.rawLatitude ?? live?.latitude ?? b.latitude,
+        rawLongitude: live?.rawLongitude ?? live?.longitude ?? b.longitude,
+        snappedLatitude: live?.snappedLatitude,
+        snappedLongitude: live?.snappedLongitude,
+        isRoadMatched: live?.isRoadMatched,
+        roadName: live?.roadName,
+        accuracy: live?.accuracy,
+        accuracyDescription: live?.accuracyDescription,
+        locationName: live?.locationName,
+        nearbyLandmark: live?.nearbyLandmark,
+        speed: isFresh ? (live.speed ?? 0) : 0,
+        heading: isFresh && live.heading != null ? live.heading : null,
+        gpsTime: live?.gpsTime ?? null,
+        isStale: !isFresh,
+      };
+    })
+    .filter((b) => {
+      const status = String(b.status || "").toUpperCase();
+      const isParkedOrInactive =
+        status === "PARKED" ||
+        status === "INACTIVE" ||
+        status === "STANDBY" ||
+        status === "STOPPED" ||
+        status === "MAINTENANCE" ||
+        status === "COMPLETED";
+
+      if (isParkedOrInactive && b.speed <= 0 && status !== "ON_ROUTE" && status !== "IN_PROGRESS") {
+        return false;
+      }
+
+      return status === "ON_ROUTE" || status === "IN_PROGRESS" || status === "ACTIVE" || b.speed > 0;
+    });
 
   return (
     <>
@@ -1780,7 +1806,7 @@ function Dashboard() {
 // FAMILY / STUDENT / PARENT DASHBOARD — with Student Search & Instant Telemetry
 // ============================================================
 function FamilyDashboard() {
-  const { user, buses, students, routes, loading, refreshData } = useStore();
+  const { user, buses, students, routes, loading } = useStore();
   const [studentSearch, setStudentSearch] = useState("");
   const [selectedStudentId, setSelectedStudentId] = useState(() => {
     const matched = students.find((s) => s.email === user.email || s.parentName === user.name || s.name === user.name);
@@ -1789,12 +1815,6 @@ function FamilyDashboard() {
 
   const [busLive, setBusLive] = useState(null);
   const [routeStops, setRouteStops] = useState([]);
-
-  useEffect(() => {
-    if (refreshData && (students.length === 0 || buses.length === 0)) {
-      refreshData(true);
-    }
-  }, []);
 
   useEffect(() => {
     if (!selectedStudentId && students.length > 0) {
@@ -2100,28 +2120,32 @@ function FamilyDashboard() {
           </div>
           <div style={{ height: "360px", width: "100%", position: "relative" }}>
             <LiveMap
-              buses={[{
-                ...bus,
-                latitude: busLive?.latitude ?? bus?.latitude ?? 17.4475,
-                longitude: busLive?.longitude ?? bus?.longitude ?? 78.3762,
-                rawLatitude: busLive?.rawLatitude ?? busLive?.latitude ?? bus?.latitude,
-                rawLongitude: busLive?.rawLongitude ?? busLive?.longitude ?? bus?.longitude,
-                snappedLatitude: busLive?.snappedLatitude,
-                snappedLongitude: busLive?.snappedLongitude,
-                isRoadMatched: busLive?.isRoadMatched,
-                roadName: busLive?.roadName,
-                speed: busLive?.speed ?? 0,
-                heading: busLive?.heading,
-                accuracy: busLive?.accuracy,
-                accuracyDescription: busLive?.accuracyDescription,
-                locationName: busLive?.locationName,
-                nearbyLandmark: busLive?.nearbyLandmark,
-                status: busLive?.status || bus?.status || "STANDBY",
-                gpsTime: busLive?.gpsTime,
-                isStale: busLive?.isStale,
-              }]}
-              selectedBusId={bus.id}
-              routeStops={routeStops}
+              buses={
+                isBusActive
+                  ? [{
+                      ...bus,
+                      latitude: busLive?.latitude ?? bus?.latitude ?? 17.4475,
+                      longitude: busLive?.longitude ?? bus?.longitude ?? 78.3762,
+                      rawLatitude: busLive?.rawLatitude ?? busLive?.latitude ?? bus?.latitude,
+                      rawLongitude: busLive?.rawLongitude ?? busLive?.longitude ?? bus?.longitude,
+                      snappedLatitude: busLive?.snappedLatitude,
+                      snappedLongitude: busLive?.snappedLongitude,
+                      isRoadMatched: busLive?.isRoadMatched,
+                      roadName: busLive?.roadName,
+                      speed: busLive?.speed ?? 0,
+                      heading: busLive?.heading,
+                      accuracy: busLive?.accuracy,
+                      accuracyDescription: busLive?.accuracyDescription,
+                      locationName: busLive?.locationName,
+                      nearbyLandmark: busLive?.nearbyLandmark,
+                      status: busLive?.status || bus?.status || "STANDBY",
+                      gpsTime: busLive?.gpsTime,
+                      isStale: busLive?.isStale,
+                    }]
+                  : []
+              }
+              selectedBusId={isBusActive ? bus.id : null}
+              routeStops={isBusActive ? routeStops : []}
             />
           </div>
         </div>
@@ -2131,338 +2155,11 @@ function FamilyDashboard() {
 }
 
 // ============================================================
-// DRIVER DASHBOARD — Wired to POST /api/trips/start & /end + Realtime GPS Streamer
+// DRIVER WORKSPACE — Assigned Trips & Direct Live Tracking
 // ============================================================
 function DriverDashboard() {
-  const { user, buses, drivers, routes, refreshData, loading } = useStore();
-  const driver = drivers.find((d) => d.email === user.email || d.name === user.name) || drivers[0];
-  const bus = buses.find((b) => b.driverId === driver?.id) || buses[0];
-  const [tripInProgress, setTripInProgress] = useState(false);
-  const [currentTripId, setCurrentTripId] = useState(null);
-  const [tripMsg, setTripMsg] = useState("");
-  const [btnLoading, setBtnLoading] = useState(false);
-
-  // Real-time GPS broadcasting state
-  const [gpsActive, setGpsActive] = useState(true);
-  const [gpsStatus, setGpsStatus] = useState("Live GPS Ready");
-  const [currentCoords, setCurrentCoords] = useState({ lat: 17.4435, lng: 78.3772, speed: 40, time: "Initial" });
-  const [pingsCount, setPingsCount] = useState(0);
-
-  useEffect(() => {
-    if (refreshData && (drivers.length === 0 || buses.length === 0)) {
-      refreshData(true);
-    }
-  }, []);
-
-  // Check active trips
-  useEffect(() => {
-    tripService.getActiveTrips({ skipLoading: true }).then((trips) => {
-      if (trips && trips.length > 0) {
-        const myTrip = trips.find((t) => t.driverId === driver?.id || t.busId === bus?.id);
-        if (myTrip) {
-          setTripInProgress(true);
-          setCurrentTripId(myTrip.id);
-        }
-      }
-    }).catch(() => {});
-  }, [driver, bus]);
-
-  // Transmit real-time coordinates to backend silently without triggering global loader
-  const transmitGps = useCallback(async (lat, lng, speed = 0, heading = null, accuracy = null) => {
-    if (!bus) return;
-    try {
-      const res = await api.post("/api/tracking/location", {
-        busId: bus.id,
-        latitude: Number(lat.toFixed(6)),
-        longitude: Number(lng.toFixed(6)),
-        speed: Number(speed),
-        ...(heading != null && !isNaN(heading) ? { heading: Number(heading.toFixed(1)) } : {}),
-        ...(accuracy != null && !isNaN(accuracy) ? { accuracy: Number(accuracy.toFixed(1)) } : {}),
-        tripId: currentTripId,
-        provider: "BROWSER_DEVICE_GPS",
-      }, { skipLoading: true });
-
-      const data = res.data;
-      setCurrentCoords({
-        lat,
-        lng,
-        speed,
-        heading,
-        accuracy,
-        locationName: data?.locationName,
-        nearbyLandmark: data?.nearbyLandmark,
-        time: new Date().toLocaleTimeString(),
-      });
-      setPingsCount((c) => c + 1);
-      setGpsStatus(
-        accuracy != null
-          ? `🟢 GPS Lock (±${Math.round(accuracy)}m accuracy) - Broadcasting`
-          : "🟢 GPS Stream Active - Broadcasting"
-      );
-    } catch {
-      // transient network glitch
-    }
-  }, [bus, currentTripId]);
-
-  if (loading && buses.length === 0) {
-    return <ContainerSpinner minHeight="350px" />;
-  }
-
-  // Stream live coordinates continuously via navigator.geolocation when driver is logged in
-  useEffect(() => {
-    if (!bus || !user || user.role !== "DRIVER") return;
-    if (!gpsActive && !tripInProgress) return;
-
-    let watchId = null;
-
-    const onPosSuccess = (pos) => {
-      const { latitude, longitude, speed, heading, accuracy } = pos.coords;
-      const kmh = speed != null && speed > 0 ? Number((speed * 3.6).toFixed(1)) : 0;
-      const realHeading = heading != null && !isNaN(heading) ? heading : null;
-      transmitGps(latitude, longitude, kmh, realHeading, accuracy);
-    };
-
-    const onPosError = (err) => {
-      console.warn("GPS watch position error:", err);
-      setGpsStatus("⚠️ Waiting for device GPS fix. Please ensure location services are enabled.");
-    };
-
-    if ("geolocation" in navigator) {
-      setGpsStatus("Acquiring high-accuracy GPS signal from your device...");
-      navigator.geolocation.getCurrentPosition(onPosSuccess, onPosError, {
-        enableHighAccuracy: true,
-        maximumAge: 1000,
-        timeout: 10000,
-      });
-
-      watchId = navigator.geolocation.watchPosition(onPosSuccess, onPosError, {
-        enableHighAccuracy: true,
-        maximumAge: 1000,
-        timeout: 10000,
-      });
-    }
-
-    // Keep-alive heartbeat: re-queries genuine hardware GPS reading.
-    // NEVER injects fake synthetic offsets or arbitrary coordinates.
-    const interval = setInterval(() => {
-      if ("geolocation" in navigator && (gpsActive || tripInProgress)) {
-        navigator.geolocation.getCurrentPosition(
-          onPosSuccess,
-          () => {},
-          { enableHighAccuracy: true, maximumAge: 2000, timeout: 8000 }
-        );
-      }
-    }, 8000);
-
-    return () => {
-      if (watchId !== null) navigator.geolocation.clearWatch(watchId);
-      clearInterval(interval);
-    };
-  }, [bus, user, gpsActive, tripInProgress, transmitGps]);
-
-  const handleTripToggle = async () => {
-    if (!bus || !driver) return;
-    setBtnLoading(true);
-    setTripMsg("");
-    try {
-      if (!tripInProgress) {
-        const trip = await tripService.startTrip(bus.id, driver.id, bus.routeId || 1, "MORNING", "Regular morning trip");
-        setTripInProgress(true);
-        setCurrentTripId(trip.id);
-        setGpsActive(true);
-        setTripMsg("Trip started successfully! Realtime location is being streamed to parents and administrators.");
-      } else {
-        await tripService.endTrip(currentTripId);
-        setTripInProgress(false);
-        setCurrentTripId(null);
-        setTripMsg("Trip ended successfully. Vehicle marked offline.");
-      }
-      refreshData();
-    } catch (err) {
-      setTripMsg(err.response?.data?.message || "Failed to update trip.");
-    } finally {
-      setBtnLoading(false);
-    }
-  };
-
-  return (
-    <>
-      <PageTitle
-        eyebrow="DRIVER WORKSPACE"
-        title={`Welcome, ${user.name}`}
-        description="Your vehicle and real-time GPS stream are active. Coordinates are broadcast to parents and administrators."
-      />
-      <div className="family-grid">
-        <div className="panel">
-          <h5>Assigned vehicle</h5>
-          <div className="journey-visual mt-3">
-            <i className="bi bi-bus-front-fill" />
-            <div>
-              <b>{bus?.busNumber || bus?.number || "No bus assigned"}</b>
-              <span>{bus?.busName || bus?.name}</span>
-            </div>
-          </div>
-          <div className="detail-line"><span>Driver</span><b>{driver?.name || user.name}</b></div>
-          <div className="detail-line"><span>License</span><b>{driver?.licenseNumber || "AP072020001"}</b></div>
-          <div className="detail-line"><span>Phone</span><b>{driver?.phone || "9876543210"}</b></div>
-          <div className="detail-line"><span>Route</span><b>{bus?.routeName || routes.find((r) => r.id === bus?.routeId)?.name || "Guntur Central Route"}</b></div>
-          <Status value={tripInProgress ? "ON_ROUTE" : (bus?.status || "OFFLINE")} />
-        </div>
-
-        <div className="panel">
-          <h5>Trip controls</h5>
-          <p className="muted mt-2">Start or complete your trip. Students and parents receive real-time notifications and live map telemetry.</p>
-          {tripMsg && <div className="alert alert-info py-2 mt-2">{tripMsg}</div>}
-          <div className="notice mb-3">
-            <i className="bi bi-broadcast text-success me-1" />
-            Real-time GPS stream is active. Your position is broadcasted to parents and admins.
-          </div>
-          <button
-            className={`btn rounded-pill px-4 ${tripInProgress ? "btn-danger" : "btn-primary"}`}
-            onClick={handleTripToggle}
-            disabled={btnLoading}
-          >
-            {btnLoading ? <InlineSpinner /> : tripInProgress ? "End Current Trip" : "Start Morning Trip"}
-          </button>
-        </div>
-      </div>
-
-      {/* Live Driver Location Telemetry Broadcast Card */}
-      <div className="panel mt-4" style={{ borderLeft: "4px solid #22c55e", background: "#f8fafc" }}>
-        <div className="d-flex justify-content-between align-items-center mb-2">
-          <div>
-            <h5 className="mb-0" style={{ color: "#0f172a" }}>
-              <i className="bi bi-broadcast text-success me-2" />
-              Live Location Broadcasting to Parents &amp; Admins
-            </h5>
-            <small className="text-muted">
-              Streaming GPS telemetry in real-time to parents and administrators
-            </small>
-          </div>
-          <span className={`badge ${gpsActive || tripInProgress ? "bg-success" : "bg-secondary"} px-3 py-2 rounded-pill`}>
-            {gpsActive || tripInProgress ? "🔴 BROADCASTING LIVE" : "STANDBY"}
-          </span>
-        </div>
-
-        <div className="row g-3 mt-2">
-          <div className="col-md-4">
-            <div className="detail-line">
-              <span>Status</span>
-              <b style={{ color: "#16a34a", fontSize: "12px" }}>{gpsStatus}</b>
-            </div>
-          </div>
-          <div className="col-md-4">
-            <div className="detail-line">
-              <span>Current GPS Coordinates</span>
-              <b>
-                {currentCoords?.lat != null ? `${currentCoords.lat.toFixed(6)}° N, ${currentCoords.lng.toFixed(6)}° E` : "Acquiring..."}
-              </b>
-            </div>
-          </div>
-          <div className="col-md-4">
-            <div className="detail-line">
-              <span>Accuracy &amp; Speed</span>
-              <b>
-                {currentCoords?.accuracy != null ? `±${Math.round(currentCoords.accuracy)}m` : "Acquiring"} · {Math.round(currentCoords?.speed || 0)} km/h · {pingsCount} updates
-              </b>
-            </div>
-          </div>
-
-          {currentCoords?.locationName && (
-            <div className="col-12 mt-2">
-              <div className="p-2 rounded" style={{ background: "#f1f5f9", border: "1px solid #cbd5e1" }}>
-                <span className="text-muted d-block" style={{ fontSize: "10px", fontWeight: 700, textTransform: "uppercase" }}>
-                  Verified Detected Address
-                </span>
-                <b className="text-dark" style={{ fontSize: "13px" }}>
-                  📍 {currentCoords.locationName}
-                </b>
-                {currentCoords?.nearbyLandmark && (
-                  <div className="text-secondary mt-1" style={{ fontSize: "11px" }}>
-                    🏛️ <i>{currentCoords.nearbyLandmark}</i>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="d-flex gap-2 mt-3 pt-2" style={{ borderTop: "1px solid #e2e8f0" }}>
-          <button
-            className={`btn btn-sm rounded-pill px-4 ${gpsActive ? "btn-outline-danger" : "btn-success"}`}
-            onClick={() => setGpsActive(!gpsActive)}
-          >
-            <i className={`bi ${gpsActive ? "bi-stop-circle" : "bi-play-circle"} me-1`} />
-            {gpsActive ? "Pause GPS Stream" : "Resume GPS Stream"}
-          </button>
-          <button
-            className="btn btn-sm btn-outline-primary rounded-pill px-3"
-            onClick={() => {
-              if ("geolocation" in navigator) {
-                setGpsStatus("Polling exact device GPS coordinates...");
-                navigator.geolocation.getCurrentPosition(
-                  (pos) => {
-                    const { latitude, longitude, speed, heading, accuracy } = pos.coords;
-                    const kmh = speed != null && speed > 0 ? Number((speed * 3.6).toFixed(1)) : 0;
-                    transmitGps(latitude, longitude, kmh, heading, accuracy);
-                  },
-                  (err) => {
-                    setGpsStatus(`GPS acquisition error: ${err.message}`);
-                  },
-                  { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
-                );
-              }
-            }}
-          >
-            <i className="bi bi-geo-alt-fill me-1" />
-            Refresh Device GPS Fix Now
-          </button>
-          <Link to="/tracking" className="btn btn-sm btn-outline-secondary rounded-pill px-3 ms-auto">
-            View Full Live Map <i className="bi bi-arrow-up-right ms-1" />
-          </Link>
-        </div>
-      </div>
-
-      {/* Driver Real-Time Road Alignment & Navigation Map */}
-      {bus && (
-        <div className="panel mt-4 p-0 overflow-hidden" style={{ borderRadius: "14px", border: "1px solid #e2e8f0" }}>
-          <div className="p-3 bg-white border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
-            <div>
-              <h5 className="mb-0 fw-bold text-dark">
-                <i className="bi bi-compass-fill text-primary me-2" />
-                Driver Live Navigation &amp; Road Alignment
-              </h5>
-              <small className="text-muted">
-                Your device GPS is road-matched and synchronized with parent and admin dashboards in real time
-              </small>
-            </div>
-            <span className="badge bg-primary px-3 py-2 rounded-pill">
-              {currentCoords?.speed ? `${Math.round(currentCoords.speed)} km/h` : "STANDBY"}
-            </span>
-          </div>
-          <div style={{ height: "340px", width: "100%", position: "relative" }}>
-            <LiveMap
-              buses={[{
-                ...bus,
-                latitude: currentCoords?.lat || 17.4475,
-                longitude: currentCoords?.lng || 78.3762,
-                rawLatitude: currentCoords?.lat || 17.4475,
-                rawLongitude: currentCoords?.lng || 78.3762,
-                speed: currentCoords?.speed || 0,
-                heading: currentCoords?.heading,
-                accuracy: currentCoords?.accuracy,
-                accuracyDescription: currentCoords?.accuracy != null ? `±${Math.round(currentCoords.accuracy)}m` : "Good",
-                locationName: currentCoords?.locationName,
-                nearbyLandmark: currentCoords?.nearbyLandmark,
-                status: tripInProgress ? "ON_ROUTE" : (bus?.status || "STANDBY"),
-              }]}
-              selectedBusId={bus?.id}
-            />
-          </div>
-        </div>
-      )}
-    </>
-  );
+  const { user } = useStore();
+  return <DriverTripsPortal user={user} />;
 }
 
 // ============================================================
@@ -2471,7 +2168,7 @@ function DriverDashboard() {
 // slide-in panel with Active/Parked/All tabs, full telemetry and actions.
 // ============================================================
 function Tracking() {
-  const { user, buses, routes, drivers, students } = useStore();
+  const { user, buses, routes, drivers, students, loading } = useStore();
   const location = useLocation();
   const queryParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
   const urlBusId = queryParams.get("busId");
@@ -2697,65 +2394,94 @@ function Tracking() {
 
   // Load route stops & GPS history trail for selected bus
   useEffect(() => {
+    // Immediately clear previous bus stops and trail to guarantee ZERO cross-trip overlap
+    setRouteStops([]);
+    setHistoryTrail([]);
+
     if (!selectedBus) {
-      setRouteStops([]);
-      setHistoryTrail([]);
       return;
     }
 
+    let isMounted = true;
     if (selectedBus.routeId) {
       routeService
         .getById(selectedBus.routeId)
-        .then((r) => setRouteStops(r?.stops || []))
-        .catch(() => setRouteStops([]));
-    } else {
-      setRouteStops([]);
+        .then((r) => {
+          if (isMounted) setRouteStops(r?.stops || []);
+        })
+        .catch(() => {
+          if (isMounted) setRouteStops([]);
+        });
     }
 
     trackingService
       .getHistory(selectedBus.id, 40)
-      .then((history) => setHistoryTrail(history || []))
-      .catch(() => setHistoryTrail([]));
-  }, [selectedBus]);
+      .then((history) => {
+        if (isMounted) setHistoryTrail(history || []);
+      })
+      .catch(() => {
+        if (isMounted) setHistoryTrail([]);
+      });
 
-  // Prepare buses for LiveMap with full metadata including GPS staleness info
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedBus?.id, selectedBus?.routeId]);
+
+  // Prepare buses for LiveMap — STRICTLY ACTIVE VEHICLES ONLY (parked/standby hidden on map)
   const mapBuses = useMemo(() => {
-    return visibleBuses.map((b) => {
-      const live = visibleLiveLocations.find((l) => String(l.busId) === String(b.id));
-      // Fresh = live data exists, not stale, GPS < 3 minutes old
-      const isFresh =
-        live &&
-        !live.isStale &&
-        live.gpsTime &&
-        Date.now() - new Date(live.gpsTime).getTime() < 180000;
+    return visibleBuses
+      .map((b) => {
+        const live = visibleLiveLocations.find((l) => String(l.busId) === String(b.id));
+        // Fresh = live data exists, not stale, GPS < 3 minutes old
+        const isFresh =
+          live &&
+          !live.isStale &&
+          live.gpsTime &&
+          Date.now() - new Date(live.gpsTime).getTime() < 180000;
 
-      return {
-        ...b,
-        busId: b.id,
-        busNumber: b.busNumber || b.number || `Bus ${b.id}`,
-        busName: b.busName || b.name || "School Bus",
-        driverName: b.driverName || "Assigned Driver",
-        driverPhone: b.driverPhone || "",
-        status: isFresh ? (live.status || b.status) : (b.status || "PARKED"),
-        latitude: live?.latitude ?? b.latitude ?? 16.3235,
-        longitude: live?.longitude ?? b.longitude ?? 80.4578,
-        rawLatitude: live?.rawLatitude ?? live?.latitude ?? b.latitude,
-        rawLongitude: live?.rawLongitude ?? live?.longitude ?? b.longitude,
-        snappedLatitude: live?.snappedLatitude,
-        snappedLongitude: live?.snappedLongitude,
-        isRoadMatched: live?.isRoadMatched,
-        roadName: live?.roadName,
-        accuracy: live?.accuracy,
-        accuracyDescription: live?.accuracyDescription,
-        locationName: live?.locationName,
-        nearbyLandmark: live?.nearbyLandmark,
-        speed: isFresh ? (live.speed ?? 0) : 0,
-        // Only pass heading when GPS is fresh — null triggers bearing calculation in useBusHeading
-        heading: isFresh && live.heading != null ? live.heading : null,
-        gpsTime: live?.gpsTime ?? null,
-        isStale: !isFresh,
-      };
-    });
+        return {
+          ...b,
+          busId: b.id,
+          busNumber: b.busNumber || b.number || `Bus ${b.id}`,
+          busName: b.busName || b.name || "School Bus",
+          driverName: b.driverName || "Assigned Driver",
+          driverPhone: b.driverPhone || "",
+          status: isFresh ? (live.status || b.status) : (b.status || "PARKED"),
+          latitude: live?.latitude ?? b.latitude ?? 16.3235,
+          longitude: live?.longitude ?? b.longitude ?? 80.4578,
+          rawLatitude: live?.rawLatitude ?? live?.latitude ?? b.latitude,
+          rawLongitude: live?.rawLongitude ?? live?.longitude ?? b.longitude,
+          snappedLatitude: live?.snappedLatitude,
+          snappedLongitude: live?.snappedLongitude,
+          isRoadMatched: live?.isRoadMatched,
+          roadName: live?.roadName,
+          accuracy: live?.accuracy,
+          accuracyDescription: live?.accuracyDescription,
+          locationName: live?.locationName,
+          nearbyLandmark: live?.nearbyLandmark,
+          speed: isFresh ? (live.speed ?? 0) : 0,
+          heading: isFresh && live.heading != null ? live.heading : null,
+          gpsTime: live?.gpsTime ?? null,
+          isStale: !isFresh,
+        };
+      })
+      .filter((b) => {
+        const status = String(b.status || "").toUpperCase();
+        const isParkedOrInactive =
+          status === "PARKED" ||
+          status === "INACTIVE" ||
+          status === "STANDBY" ||
+          status === "STOPPED" ||
+          status === "MAINTENANCE" ||
+          status === "COMPLETED";
+
+        if (isParkedOrInactive && b.speed <= 0 && status !== "ON_ROUTE" && status !== "IN_PROGRESS") {
+          return false;
+        }
+
+        return status === "ON_ROUTE" || status === "IN_PROGRESS" || status === "ACTIVE" || b.speed > 0;
+      });
   }, [visibleBuses, visibleLiveLocations]);
 
   // Derived telemetry metrics for selected bus — with staleness guard
@@ -2843,18 +2569,12 @@ function Tracking() {
         journeyProgress = Math.max(0.08, Math.min(0.92, rawRatio));
       }
 
-      // Dynamic ETA calculated from live remaining distance & driver speed
+      // Dynamic ETA calculated strictly from live remaining distance & driver speed using authoritative calculateEta
       let estEta = "Parked";
-      if (isActive && curSpeed >= 5) {
-        if (remainingDistanceKm <= 0.15) {
-          estEta = "Arrived";
-        } else {
-          const mins = Math.max(1, Math.round((remainingDistanceKm / curSpeed) * 60));
-          estEta = `${mins} mins`;
-        }
+      if (isActive && curSpeed >= 3) {
+        estEta = calculateEta(remainingDistanceKm, curSpeed);
       } else if (isActive) {
-        const mins = Math.max(1, Math.round((remainingDistanceKm / 25) * 60));
-        estEta = `~${mins} mins`;
+        estEta = calculateEta(remainingDistanceKm, 25);
       } else {
         estEta = "Parked";
       }
@@ -2916,6 +2636,7 @@ function Tracking() {
               setSelectedId(Number(id));
             }}
             onClose={() => setIsDrawerOpen(false)}
+            loading={loading && panelRoutes.length === 0}
           />
         </div>
       </div>
@@ -2927,9 +2648,13 @@ function Tracking() {
           className="mobile-fleet-reopen-btn"
           onClick={() => setIsDrawerOpen(true)}
           title="Open Fleet List"
+          aria-label="Open Fleet List"
         >
           <i className="bi bi-bus-front-fill" />
           <span>Fleet Buses</span>
+          <span className="badge bg-white text-primary rounded-pill px-2 py-0.5 ms-1 fw-bold" style={{ fontSize: "11px" }}>
+            {panelRoutes.length}
+          </span>
         </button>
       )}
     </div>
@@ -3002,12 +2727,23 @@ function CrudPage({ type, items, onSave, onDelete, fields, description, onAddCus
     }
   };
 
-  // Automatically fetch fresh records whenever this CRUD page is mounted or switches type
+  // Only silently fetch on mount IF items are currently empty
   useEffect(() => {
-    if (authService.isAuthenticated()) {
-      handleRefresh();
+    if (items.length === 0 && authService.isAuthenticated()) {
+      if (type === "Buses") {
+        refreshBuses(true);
+        if (refreshDrivers) refreshDrivers(true);
+        if (refreshRoutes) refreshRoutes(true);
+      } else if (type === "Drivers") {
+        refreshDrivers(true);
+      } else if (type === "Students") {
+        refreshStudents(true);
+        if (refreshBuses) refreshBuses(true);
+      } else if (type === "Routes") {
+        refreshRoutes(true);
+      }
     }
-  }, [type]);
+  }, [type, items.length]);
 
   const blank = Object.fromEntries(fields.map((f) => [f.key, f.default ?? ""]));
   const [form, setForm] = useState(blank);
@@ -3313,7 +3049,7 @@ function CrudPage({ type, items, onSave, onDelete, fields, description, onAddCus
                   Cancel
                 </button>
                 <button className="btn btn-primary rounded-pill px-4" disabled={saving}>
-                  {saving ? <InlineSpinner /> : "Save record"}
+                  {saving ? "Saving..." : "Save record"}
                 </button>
               </div>
             </form>
@@ -3364,12 +3100,7 @@ function CrudPage({ type, items, onSave, onDelete, fields, description, onAddCus
 // BUSES MANAGEMENT
 // ============================================================
 function Buses() {
-  const { buses, setBuses, routes, drivers, refreshData, refreshRoutes, refreshDrivers } = useStore();
-
-  useEffect(() => {
-    if (routes.length === 0 && refreshRoutes) refreshRoutes(true);
-    if (drivers.length === 0 && refreshDrivers) refreshDrivers(true);
-  }, [routes.length, drivers.length, refreshRoutes, refreshDrivers]);
+  const { buses, setBuses, routes, drivers, refreshData } = useStore();
 
   const routeOptions = [
     { label: "None (Unassigned)", value: "" },
@@ -3471,11 +3202,7 @@ function Drivers() {
 // STUDENTS MANAGEMENT
 // ============================================================
 function Students() {
-  const { students, setStudents, buses, refreshData, refreshBuses } = useStore();
-
-  useEffect(() => {
-    if (buses.length === 0 && refreshBuses) refreshBuses(true);
-  }, [buses.length, refreshBuses]);
+  const { students, setStudents, buses, refreshData } = useStore();
 
   const busOptions = [
     { label: "None (Unassigned)", value: "" },
@@ -3528,14 +3255,22 @@ function Students() {
 // ============================================================
 // ROUTES MANAGEMENT
 // ============================================================
-function RoutesPage() {
-  const { routes, setRoutes, refreshRoutes, refreshData } = useStore();
+function RoutesPage({ onBuilderStateChange }) {
+  const { routes, setRoutes, refreshData, buses } = useStore();
   const [showBuilder, setShowBuilder] = useState(false);
   const [editingRoute, setEditingRoute] = useState(null);
 
   useEffect(() => {
-    if (refreshRoutes) refreshRoutes(true);
-  }, [refreshRoutes]);
+    if (onBuilderStateChange) {
+      onBuilderStateChange(showBuilder);
+    }
+  }, [showBuilder, onBuilderStateChange]);
+
+  useEffect(() => {
+    return () => {
+      if (onBuilderStateChange) onBuilderStateChange(false);
+    };
+  }, [onBuilderStateChange]);
 
   const fields = [
     { key: "name", label: "Route name" },
@@ -3581,36 +3316,37 @@ function RoutesPage() {
     await refreshData(true);
   };
 
-  return (
-    <>
-      <CrudPage
-        type="Routes"
-        items={routes}
-        onSave={handleSave}
-        onDelete={handleDelete}
-        onAddCustom={() => {
+  if (showBuilder) {
+    return (
+      <RouteBuilderMap
+        initialRoute={editingRoute}
+        onSave={handleSaveFromMap}
+        onClose={() => {
+          setShowBuilder(false);
           setEditingRoute(null);
-          setShowBuilder(true);
         }}
-        onEditCustom={(row) => {
-          setEditingRoute(row);
-          setShowBuilder(true);
-        }}
-        fields={fields}
-        description="Create and manage transportation routes with real Indian locations using the interactive road map."
+        buses={buses}
       />
+    );
+  }
 
-      {showBuilder && (
-        <RouteBuilderMap
-          initialRoute={editingRoute}
-          onSave={handleSaveFromMap}
-          onClose={() => {
-            setShowBuilder(false);
-            setEditingRoute(null);
-          }}
-        />
-      )}
-    </>
+  return (
+    <CrudPage
+      type="Routes"
+      items={routes}
+      onSave={handleSave}
+      onDelete={handleDelete}
+      onAddCustom={() => {
+        setEditingRoute(null);
+        setShowBuilder(true);
+      }}
+      onEditCustom={(row) => {
+        setEditingRoute(row);
+        setShowBuilder(true);
+      }}
+      fields={fields}
+      description="Create and manage transportation routes with real Indian locations using the interactive road map."
+    />
   );
 }
 

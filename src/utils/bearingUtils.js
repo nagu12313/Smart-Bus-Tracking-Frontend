@@ -76,6 +76,38 @@ export function bearingToCssRotation(bearing) {
 }
 
 /**
+ * Continuous (un-modulo'd) CSS rotation for smooth 90FPS/120FPS GPU transforms.
+ * Never flips across 0/360 boundary.
+ */
+export function continuousBearingToCssRotation(continuousBearing) {
+  return continuousBearing - 90;
+}
+
+/**
+ * Frame-rate independent continuous bearing smoothing.
+ * Interpolates smoothly along the shortest angular path without wrapping around 360°,
+ * eliminating 360-degree CSS spin jumps and angular chatter.
+ *
+ * @param {number} currentContinuous - Accumulated continuous bearing (can be < 0 or > 360)
+ * @param {number} targetBearing - Desired target bearing in 0-360
+ * @param {number} damping - Damping factor (default 8)
+ * @param {number} dtSeconds - Delta time in seconds
+ * @returns {number} New continuous bearing
+ */
+export function smoothContinuousBearing(currentContinuous, targetBearing, damping = 8, dtSeconds = 0.016) {
+  if (currentContinuous == null || isNaN(currentContinuous)) return targetBearing ?? 0;
+  if (targetBearing == null || isNaN(targetBearing)) return currentContinuous;
+
+  const currentMod = normalizeAngle(currentContinuous);
+  const delta = shortestAngularDelta(currentMod, targetBearing);
+
+  const safeDt = Math.min(Math.max(dtSeconds || 0.016, 0.001), 0.05);
+  const factor = 1 - Math.exp(-damping * safeDt);
+
+  return currentContinuous + delta * factor;
+}
+
+/**
  * Detect if a heading change is likely GPS noise rather than real movement.
  * @param {number} speedKmh - Current speed in km/h
  * @param {number} angleDelta - Absolute angular change in degrees

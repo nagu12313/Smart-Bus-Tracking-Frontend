@@ -10,13 +10,25 @@ export const tripService = {
     api.post('/api/trips/start', { busId, driverId, routeId, tripType, notes })
       .then(r => r.data.data),
 
+  /** Start an existing scheduled trip directly */
+  startScheduledTrip: (tripId) =>
+    api.put(`/api/trips/${tripId}/start`).then(r => r.data.data),
+
   /** End an active trip */
   endTrip: (tripId) =>
     api.put(`/api/trips/${tripId}/end`).then(r => r.data.data),
 
+  /** Get trips assigned to the currently logged in driver */
+  getMyTrips: (config = {}) =>
+    api.get('/api/trips/my-trips', config).then(r => r.data.data),
+
+  /** Get trip by ID */
+  getById: (tripId, config = {}) =>
+    api.get(`/api/trips/${tripId}`, config).then(r => r.data.data),
+
   /** Get currently active trips */
-  getActiveTrips: () =>
-    api.get('/api/trips/active').then(r => r.data.data),
+  getActiveTrips: (config = {}) =>
+    api.get('/api/trips/active', config).then(r => r.data.data),
 
   /** Get all trips (paginated) */
   getAll: (page = 0, size = 20) =>

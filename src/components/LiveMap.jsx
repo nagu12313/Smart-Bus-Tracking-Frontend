@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useCallback } from "react";
+import React, { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import {
   MapContainer,
   TileLayer,
@@ -14,12 +14,13 @@ import "leaflet/dist/leaflet.css";
 import routingService from "../services/routingService";
 import { useBusHeading } from "../hooks/useBusHeading";
 import { bearingToCssRotation, normalizeAngle } from "../utils/bearingUtils";
+import SmoothAnimatedBusMarker from "./SmoothAnimatedBusMarker";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // School Bus SVG — front faces EAST (right) in the SVG coordinate system.
 // bearingToCssRotation() converts geographic bearing → correct CSS angle.
 // ─────────────────────────────────────────────────────────────────────────────
-const SCHOOL_BUS_SVG = `
+export const SCHOOL_BUS_SVG = `
 <svg width="58" height="28" viewBox="0 0 58 28" fill="none" xmlns="http://www.w3.org/2000/svg">
   <!-- Tires / Wheels -->
   <rect x="7"  y="0.5"  width="8" height="2.5" rx="1" fill="#111827"/>
@@ -108,7 +109,7 @@ const createRawGpsIcon = () =>
 // createRotatingBusIcon — builds a Leaflet divIcon with the CSS rotation baked in.
 // Called whenever cssRotation, isSelected, or bus metadata changes.
 // ─────────────────────────────────────────────────────────────────────────────
-const createRotatingBusIcon = (bus = {}, cssRotation = 0, isSelected = false) => {
+export const createRotatingBusIcon = (bus = {}, cssRotation = 0, isSelected = false) => {
   const isMoving = (bus.speed && bus.speed > 0) || bus.status === "ON_ROUTE";
   const busNumber = bus.busNumber || bus.number || "BUS";
   const speed = Math.round(bus.speed ?? 0);
@@ -131,25 +132,21 @@ const createRotatingBusIcon = (bus = {}, cssRotation = 0, isSelected = false) =>
         <span style="display:inline-block;width:6px;height:6px;border-radius:50%;
           background:${isMoving ? "#22c55e" : "#f59e0b"};"></span>
         <span>${busNumber}</span>
-        <span style="color:#94a3b8;font-weight:500;">${speed} km/h</span>
+        <span class="bus-speed-text" style="color:#94a3b8;font-weight:500;">${speed} km/h</span>
       </div>
 
-      <!-- Pulse ring for active buses -->
-      ${isMoving ? `
-      <div style="
-        position:absolute;width:58px;height:58px;border-radius:50%;
-        background:rgba(245,158,11,.18);
-        border:1.5px solid rgba(245,158,11,.4);
-        animation:bus-radar-pulse 2s cubic-bezier(.2,.8,.2,1) infinite;
-        pointer-events:none;"></div>` : ""}
-
       <!-- Bus SVG rotated to face direction of travel -->
-      <div style="
+      <div class="bus-svg-rotating" style="
         transform:rotate(${cssRotation}deg);
         transform-origin:center center;
         filter:drop-shadow(0 4px 8px rgba(0,0,0,.35));
         display:flex;align-items:center;justify-content:center;
-        will-change:transform;">
+        will-change:transform;
+        transform-style:preserve-3d;
+        -webkit-transform-style:preserve-3d;
+        backface-visibility:hidden;
+        -webkit-backface-visibility:hidden;
+        transition:none !important;">
         ${SCHOOL_BUS_SVG}
       </div>
     </div>`;
@@ -369,6 +366,9 @@ function AutoMapFocus({ selectedBusId, routeCoordinates, busCoordinates, focusTr
   const routeFittedBusIdRef = useRef(null);
   const lastTriggerRef = useRef(0);
 
+  const busLat = busCoordinates?.[0];
+  const busLng = busCoordinates?.[1];
+
   useEffect(() => {
     if (!selectedBusId) {
       focusedBusIdRef.current = null;
@@ -376,11 +376,11 @@ function AutoMapFocus({ selectedBusId, routeCoordinates, busCoordinates, focusTr
     } else if (focusedBusIdRef.current !== selectedBusId) {
       focusedBusIdRef.current = selectedBusId;
       routeFittedBusIdRef.current = null;
-      if (busCoordinates?.[0] && busCoordinates?.[1]) {
-        map.setView(busCoordinates, 14, { animate: true, duration: 0.7 });
+      if (busLat != null && busLng != null) {
+        map.setView([busLat, busLng], 14, { animate: true, duration: 0.7 });
       }
     }
-  }, [selectedBusId, busCoordinates, map]);
+  }, [selectedBusId, busLat, busLng, map]);
 
   useEffect(() => {
     if (!selectedBusId) return;
@@ -404,47 +404,106 @@ function AutoMapFocus({ selectedBusId, routeCoordinates, busCoordinates, focusTr
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// isVehicleActive — checks if a bus is actively in transit / on route
+// Strict filter: parked, standby, stopped, inactive, or stale buses with zero speed are hidden.
+// ─────────────────────────────────────────────────────────────────────────────
+export function isVehicleActive(bus) {
+  if (!bus) return false;
+  const lat = bus.latitude ?? bus.lat;
+  const lng = bus.longitude ?? bus.lng;
+  if (lat == null || lng == null) return false;
+
+  const status = String(bus.status || "").toUpperCase();
+  const speed = Number(bus.speed ?? 0);
+
+  // Stale guard: if stale with zero speed, vehicle is not actively moving
+  if (bus.isStale && speed <= 0) return false;
+
+  const isExplicitlyParkedOrInactive =
+    status === "PARKED" ||
+    status === "INACTIVE" ||
+    status === "STANDBY" ||
+    status === "STOPPED" ||
+    status === "MAINTENANCE" ||
+    status === "COMPLETED";
+
+  // If bus is explicitly marked parked/inactive and not moving, exclude from map
+  if (isExplicitlyParkedOrInactive && speed <= 0 && status !== "ON_ROUTE" && status !== "IN_PROGRESS") {
+    return false;
+  }
+
+  // Active condition: explicitly on route or moving with positive speed
+  return status === "ON_ROUTE" || status === "IN_PROGRESS" || status === "ACTIVE" || speed > 0;
+}
+
+const EMPTY_BUSES = [];
+const EMPTY_STOPS = [];
+const EMPTY_TRAIL = [];
+const EMPTY_POLYLINE = [];
+
+// ─────────────────────────────────────────────────────────────────────────────
 // LiveMap — main export
 // ─────────────────────────────────────────────────────────────────────────────
 export default function LiveMap({
-  buses = [],
+  buses = EMPTY_BUSES,
   selectedBusId = null,
-  routeStops = [],
-  historyTrail = [],
-  alternativePolyline = [],
+  routeStops = EMPTY_STOPS,
+  historyTrail = EMPTY_TRAIL,
+  alternativePolyline = EMPTY_POLYLINE,
   showTrail = true,
   onSelectBus,
   focusTrigger = 0,
 }) {
   const defaultCenter = [16.3067, 80.4365];
   const [roadPolyline, setRoadPolyline] = useState([]);
+  const prevBusIdRef = useRef(selectedBusId);
 
-  const selectedBus = buses.find(
-    (b) => b.id === Number(selectedBusId) || b.busId === Number(selectedBusId)
-  );
+  // STRICT RULE: Only active vehicles are shown on the map
+  const activeBuses = useMemo(() => {
+    return (buses || []).filter(isVehicleActive);
+  }, [buses]);
 
-  const busCenter =
-    selectedBus?.latitude && selectedBus?.longitude
-      ? [selectedBus.latitude, selectedBus.longitude]
-      : buses[0]?.latitude && buses[0]?.longitude
-      ? [buses[0].latitude, buses[0].longitude]
-      : defaultCenter;
+  const selectedBus = useMemo(() => {
+    if (!selectedBusId) return null;
+    return activeBuses.find(
+      (b) => b.id === Number(selectedBusId) || b.busId === Number(selectedBusId)
+    );
+  }, [activeBuses, selectedBusId]);
+
+  const busCenter = useMemo(() => {
+    if (selectedBus?.latitude && selectedBus?.longitude) {
+      return [selectedBus.latitude, selectedBus.longitude];
+    }
+    if (activeBuses[0]?.latitude && activeBuses[0]?.longitude) {
+      return [activeBuses[0].latitude, activeBuses[0].longitude];
+    }
+    return defaultCenter;
+  }, [selectedBus, activeBuses]);
 
   // Fetch road geometry for the selected bus's route
   useEffect(() => {
     let alive = true;
+
+    if (!selectedBusId || !routeStops || routeStops.length < 2) {
+      setRoadPolyline((prev) => (prev.length > 0 ? [] : prev));
+      return;
+    }
+
+    if (prevBusIdRef.current !== selectedBusId) {
+      prevBusIdRef.current = selectedBusId;
+      setRoadPolyline((prev) => (prev.length > 0 ? [] : prev));
+    }
+
     async function load() {
-      if (!selectedBusId || !routeStops || routeStops.length < 2) {
-        setRoadPolyline([]);
-        return;
-      }
       const data = await routingService.fetchRoadRoute(routeStops);
       if (alive && data?.coordinates?.length > 0) {
         setRoadPolyline(data.coordinates);
       }
     }
     load();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [selectedBusId, routeStops]);
 
   const trailPolyline = showTrail
@@ -541,8 +600,8 @@ export default function LiveMap({
             );
           })}
 
-        {/* All visible bus markers — each with its own smooth rotation */}
-        {buses.map((bus) => {
+        {/* Only active bus markers are rendered on the map — parked/inactive vehicles are hidden */}
+        {activeBuses.map((bus) => {
           if (!bus) return null;
           const lat = bus.latitude ?? bus.lat;
           const lng = bus.longitude ?? bus.lng;
@@ -554,7 +613,7 @@ export default function LiveMap({
               Number(selectedBusId) === Number(bus.id));
 
           return (
-            <RotatingBusMarker
+            <SmoothAnimatedBusMarker
               key={`bus-${bus.id ?? bus.busId}`}
               bus={bus}
               isSelected={isSelected}

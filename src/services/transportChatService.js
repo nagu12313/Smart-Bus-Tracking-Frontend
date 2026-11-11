@@ -9,6 +9,11 @@ const transportChatService = {
     return res.data?.data || res.data;
   },
 
+  async getInitContext() {
+    const res = await api.get("/api/transport-chat/init");
+    return res.data?.data || res.data;
+  },
+
   async getHistory() {
     const res = await api.get("/api/transport-chat/history");
     return res.data?.data || res.data || [];

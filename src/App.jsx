@@ -16,7 +16,6 @@ import RouteListPanel from "./components/RouteListPanel";
 import SmartTransportAssistantModal from "./components/SmartTransportAssistantModal";
 import DeleteConfirmModal from "./components/DeleteConfirmModal";
 import DriverTripsPortal from "./components/DriverTripsPortal";
-import MockLiveTrackingTestScreen from "./components/MockLiveTrackingTestScreen";
 import { GlobalSpinner, ContainerSpinner, InlineSpinner } from "./components/Spinner";
 import { LoadingProvider, useLoading } from "./context/LoadingContext";
 
@@ -33,6 +32,24 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [globalLoading, setGlobalLoading] = useState(false);
   const [globalLoadingMsg, setGlobalLoadingMsg] = useState("Processing...");
+  const nav = useNavigate();
+
+  // Robust, clean sign out
+  const logout = useCallback((redirectTo = "/login") => {
+    try {
+      websocketService.disconnect();
+    } catch {}
+    api.resetLoading();
+    authService.logout();
+    hasLoadedRef.current = false;
+    setUser(null);
+    setBuses([]);
+    setDrivers([]);
+    setStudents([]);
+    setRoutes([]);
+    setStats(null);
+    nav(redirectTo, { replace: true });
+  }, [nav]);
 
   // Listen for global loading events from API calls
   useEffect(() => {
@@ -126,6 +143,7 @@ function App() {
   const value = {
     user,
     setUser,
+    logout,
     buses,
     setBuses,
     drivers,
@@ -238,9 +256,16 @@ function Landing() {
 // LOGIN & REGISTRATION PAGE — Animated Card Transition & Gmail Verification
 // ============================================================
 function Login() {
-  const { setUser, refreshData } = useStore();
+  const { user, setUser, refreshData } = useStore();
   const nav = useNavigate();
   const location = useLocation();
+
+  // If already authenticated, redirect straight to dashboard
+  useEffect(() => {
+    if (user && authService.isAuthenticated()) {
+      nav("/dashboard", { replace: true });
+    }
+  }, [user, nav]);
 
   const isRegisterInitial = location.pathname.includes("register") || location.pathname.includes("signup");
   const [isRegister, setIsRegister] = useState(isRegisterInitial);
@@ -455,7 +480,7 @@ function Login() {
       }
       nav("/dashboard");
     } catch (err) {
-      const msg = err.response?.data?.message || "Invalid credentials. Please check your email and password.";
+      const msg = err.message || err.response?.data?.message || "Invalid credentials. Please check your email and password.";
       setError(msg);
     } finally {
       setLoading(false);
@@ -571,69 +596,18 @@ function Login() {
                   onChange={(e) => setPassword(e.target.value)}
                   required
                 />
-                <button className="btn btn-primary btn-auth-submit w-100 rounded-pill mt-2" disabled={loading}>
-                  Sign in <i className="bi bi-arrow-right ms-2" />
+                <button className="btn btn-primary btn-auth-submit w-100 rounded-pill mt-3" disabled={loading}>
+                  {loading ? (
+                    <>
+                      <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true" />
+                      Signing in...
+                    </>
+                  ) : (
+                    <>
+                      Sign in <i className="bi bi-arrow-right ms-2" />
+                    </>
+                  )}
                 </button>
-
-                {/* Quick Demo Credentials for Testing */}
-                <div className="mt-3 p-2 bg-light rounded-3 border">
-                  <div className="d-flex justify-content-between align-items-center mb-1">
-                    <span className="text-muted fw-bold" style={{ fontSize: "11px", letterSpacing: "0.5px" }}>
-                      <i className="bi bi-lightning-charge-fill text-warning me-1" />
-                      QUICK DEMO ACCOUNTS
-                    </span>
-                  </div>
-                  <div className="auth-demo-grid">
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-outline-warning text-dark py-1 px-2 fw-semibold"
-                      style={{ fontSize: "11px" }}
-                      onClick={() => {
-                        setEmail("driver@edutrack.com");
-                        setPassword("driver123");
-                      }}
-                      title="Driver (Assigned Trips & GPS Live Tracking)"
-                    >
-                      <i className="bi bi-bus-front me-1 text-primary" /> Driver
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-outline-danger text-dark py-1 px-2 fw-semibold"
-                      style={{ fontSize: "11px" }}
-                      onClick={() => {
-                        setEmail("mocktest@edutrack.com");
-                        setPassword("mocktest123");
-                      }}
-                      title="Mock Live Tracking Test Screen (Isolated Mode)"
-                    >
-                      <i className="bi bi-cpu-fill me-1 text-danger" /> Mock Tester
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-outline-primary text-dark py-1 px-2 fw-semibold"
-                      style={{ fontSize: "11px" }}
-                      onClick={() => {
-                        setEmail("admin@edutrack.com");
-                        setPassword("admin123");
-                      }}
-                      title="Transport Admin"
-                    >
-                      <i className="bi bi-shield-lock me-1 text-primary" /> Admin
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-outline-success text-dark py-1 px-2 fw-semibold"
-                      style={{ fontSize: "11px" }}
-                      onClick={() => {
-                        setEmail("parent@edutrack.com");
-                        setPassword("parent123");
-                      }}
-                      title="Parent Tracking"
-                    >
-                      <i className="bi bi-people me-1 text-success" /> Parent
-                    </button>
-                  </div>
-                </div>
 
                 <div className="text-center mt-4 pt-2 border-top auth-bottom-switch">
                   <span className="text-muted" style={{ fontSize: "14px" }}>
@@ -1054,7 +1028,6 @@ const navItems = [
   ["dashboard", "Dashboard", "bi-grid-1x2-fill", ["ADMIN", "PARENT", "STUDENT", "Admin", "Parent", "Student"]],
   ["tracking",  "Live Tracking", "bi-geo-alt-fill",  ["ADMIN", "PARENT", "STUDENT", "Admin", "Parent", "Student"]],
   ["driver-trips", "My Assigned Trips", "bi-bus-front-fill", ["DRIVER", "Driver"]],
-  ["mock-test", "Mock Live Tracking", "bi-play-circle-fill", ["TEST_USER", "Test_User"]],
   ["buses",     "Bus Management", "bi-bus-front-fill", ["ADMIN", "SCHOOL_ADMIN", "Admin"]],
   ["drivers",   "Driver Management", "bi-person-badge-fill", ["ADMIN", "SCHOOL_ADMIN", "Admin"]],
   ["students",  "Student Management", "bi-mortarboard-fill", ["ADMIN", "SCHOOL_ADMIN", "Admin"]],
@@ -1077,7 +1050,6 @@ function getAvatarRoleClass(role) {
   if (r === "DRIVER") return "avatar-role-driver";
   if (r === "PARENT") return "avatar-role-parent";
   if (r === "STUDENT") return "avatar-role-student";
-  if (r === "TEST_USER") return "avatar-role-admin";
   return "avatar-role-default";
 }
 
@@ -1088,6 +1060,7 @@ function ProtectedLayout() {
   const {
     user,
     setUser,
+    logout,
     drivers = [],
     buses = [],
     setBuses,
@@ -1143,15 +1116,10 @@ function ProtectedLayout() {
 
   if (!user) return <Navigate to="/login" replace />;
 
-  const logout = () => {
-    authService.logout();
-    setUser(null);
-    if (setBuses) setBuses([]);
-    if (setDrivers) setDrivers([]);
-    if (setStudents) setStudents([]);
-    if (setRoutes) setRoutes([]);
-    if (setStats) setStats(null);
-    nav("/");
+  const handleSignOut = () => {
+    setDropdownOpen(false);
+    setOpen(false);
+    logout("/login");
   };
 
   const userRole = user.role?.toUpperCase();
@@ -1264,7 +1232,7 @@ function ProtectedLayout() {
             <b>Need assistance?</b>
             <span>Contact your transport administrator.</span>
           </div>
-          <button className="side-link logout" onClick={logout}>
+          <button className="side-link logout" onClick={handleSignOut}>
             <i className="bi bi-box-arrow-left" />Sign out
           </button>
         </div>
@@ -1366,10 +1334,7 @@ function ProtectedLayout() {
                 <button
                   type="button"
                   className="profile-menu-btn logout-btn"
-                  onClick={() => {
-                    setDropdownOpen(false);
-                    logout();
-                  }}
+                  onClick={handleSignOut}
                 >
                   <i className="bi bi-box-arrow-right" />
                   <div className="profile-menu-btn-content">
@@ -1385,7 +1350,6 @@ function ProtectedLayout() {
           <Routes>
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/driver-trips" element={<Dashboard />} />
-            <Route path="/mock-test" element={<Dashboard />} />
             <Route path="/tracking" element={<Tracking />} />
             <Route path="/buses" element={<Buses />} />
             <Route path="/drivers" element={<Drivers />} />
@@ -1559,7 +1523,7 @@ function Dashboard() {
 
   // Centralized single source of truth: fetch all latest locations on mount
   useEffect(() => {
-    if (role === "PARENT" || role === "STUDENT" || role === "DRIVER" || role === "TEST_USER") return;
+    if (role === "PARENT" || role === "STUDENT" || role === "DRIVER") return;
 
     trackingService
       .getAllLatest()
@@ -1589,7 +1553,6 @@ function Dashboard() {
     };
   }, [role]);
 
-  if (role === "TEST_USER") return <MockLiveTrackingTestScreen />;
   if (role === "PARENT" || role === "STUDENT") return <FamilyDashboard />;
   if (role === "DRIVER") return <DriverTripsPortal user={user} />;
 

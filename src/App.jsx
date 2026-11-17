@@ -1770,6 +1770,7 @@ function Dashboard() {
 // ============================================================
 function FamilyDashboard() {
   const { user, buses, students, routes, loading } = useStore();
+  const userRole = user?.role?.toUpperCase() || "PARENT";
   const [studentSearch, setStudentSearch] = useState("");
   const [selectedStudentId, setSelectedStudentId] = useState(() => {
     const matched = students.find((s) => s.email === user.email || s.parentName === user.name || s.name === user.name);
@@ -1978,8 +1979,8 @@ function FamilyDashboard() {
               )}
             </div>
             <div>
-              <small>{user.role.toUpperCase() === "PARENT" ? "ACTIVE STUDENT PROFILE" : "MY PROFILE"}</small>
-              <h4>{student?.name || user.name}</h4>
+              <small>{userRole === "PARENT" ? "ACTIVE STUDENT PROFILE" : "MY PROFILE"}</small>
+              <h4>{student?.name || user?.name}</h4>
               <span>{student?.className} · Roll: {student?.rollNumber || student?.roll || "N/A"}</span>
             </div>
           </div>

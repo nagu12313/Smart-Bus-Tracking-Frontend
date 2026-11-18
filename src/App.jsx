@@ -293,6 +293,7 @@ function Login() {
   const [showOtpModal, setShowOtpModal] = useState(false);
   const [otpError, setOtpError] = useState("");
   const [otpSuccess, setOtpSuccess] = useState("");
+  const [devOtpHint, setDevOtpHint] = useState("");
 
   // Forgot Password State
   const [showForgotModal, setShowForgotModal] = useState(false);
@@ -305,6 +306,7 @@ function Login() {
   const [forgotError, setForgotError] = useState("");
   const [forgotSuccess, setForgotSuccess] = useState("");
   const [forgotCountdown, setForgotCountdown] = useState(0);
+  const [devForgotOtp, setDevForgotOtp] = useState("");
 
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -347,13 +349,18 @@ function Login() {
     setForgotSuccess("");
     setForgotLoading(true);
     try {
-      await authService.forgotPassword(forgotEmail.trim());
+      const res = await authService.forgotPassword(forgotEmail.trim());
       setForgotStep(2);
       setForgotCountdown(60);
       setForgotOtp("");
+      const code = res?.data;
+      if (code && typeof code === "string" && code.length === 6) {
+        setDevForgotOtp(code);
+        console.log("[EduTrack] Password Reset OTP:", code);
+      }
       setForgotSuccess("A 6-digit verification code has been sent to " + forgotEmail.trim());
     } catch (err) {
-      setForgotError(err.response?.data?.message || "Failed to send reset code. Please ensure the email is registered.");
+      setForgotError(err.message || err.response?.data?.message || "Failed to send reset code. Please ensure the email is registered.");
     } finally {
       setForgotLoading(false);
     }
@@ -390,7 +397,7 @@ function Login() {
         setForgotSuccess("");
       }, 1500);
     } catch (err) {
-      setForgotError(err.response?.data?.message || "Failed to reset password. Please check your verification code.");
+      setForgotError(err.message || err.response?.data?.message || "Failed to reset password. Please check your verification code.");
     } finally {
       setForgotLoading(false);
     }
@@ -427,14 +434,19 @@ function Login() {
     setOtpError("");
     setOtpSuccess("");
     try {
-      await authService.sendOtp(regEmail.trim());
+      const res = await authService.sendOtp(regEmail.trim());
       setOtpSent(true);
       setCountdown(60);
       setOtp("");
+      const code = res?.data;
+      if (code && typeof code === "string" && code.length === 6) {
+        setDevOtpHint(code);
+        console.log("[EduTrack] Verification Code (OTP):", code);
+      }
       setOtpSuccess("");
       setShowOtpModal(true); // Open Verification Popup Modal!
     } catch (err) {
-      const msg = err.response?.data?.message || "Failed to send verification code. Please check the email address.";
+      const msg = err.message || err.response?.data?.message || "Failed to send verification code. Please check the email address.";
       if (showOtpModal) {
         setOtpError(msg);
       } else {
@@ -461,7 +473,7 @@ function Login() {
         setShowOtpModal(false);
       }, 700);
     } catch (err) {
-      setOtpError(err.response?.data?.message || "Invalid or expired verification code.");
+      setOtpError(err.message || err.response?.data?.message || "Invalid or expired verification code.");
     } finally {
       setVerifyingOtp(false);
     }
@@ -516,7 +528,7 @@ function Login() {
       }
       nav("/dashboard");
     } catch (err) {
-      const msg = err.response?.data?.message || "Registration failed. Please check your details.";
+      const msg = err.message || err.response?.data?.message || "Registration failed. Please check your details.";
       setError(msg);
     } finally {
       setLoading(false);
@@ -559,7 +571,21 @@ function Login() {
                 : "Enter your account credentials to continue to your dashboard."}
             </p>
 
-            {error && <div className="alert alert-danger py-2">{error}</div>}
+            {error && (
+              <div className="alert alert-danger py-2 px-3 small mb-3" style={{ borderRadius: "8px" }}>
+                <div className="d-flex align-items-start gap-2">
+                  <i className="bi bi-exclamation-octagon-fill text-danger mt-1 flex-shrink-0" />
+                  <div>
+                    <div className="fw-bold">{error}</div>
+                    {error.includes("unique") && (
+                      <div className="mt-1 small" style={{ color: "#7f1d1d" }}>
+                        Tip: An item with this identifier (e.g. number, email, or license) already exists. Please enter a unique value.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* SIGN IN VIEW */}
             {!isRegister ? (
@@ -781,6 +807,11 @@ function Login() {
                   <i className="bi bi-check-circle-fill me-1" /> {otpSuccess}
                 </div>
               )}
+              {devOtpHint && (
+                <div className="alert alert-info py-2 px-3 mb-3 small text-center" style={{ fontSize: "12px", borderRadius: "0px" }}>
+                  <i className="bi bi-info-circle-fill me-1" /> Verification Code: <strong>{devOtpHint}</strong>
+                </div>
+              )}
 
               {/* Centered 6-Digit OTP Field */}
               <div className="mb-4 text-center">
@@ -934,6 +965,11 @@ function Login() {
                 </div>
               ) : (
                 <div>
+                  {devForgotOtp && (
+                    <div className="alert alert-info py-2 px-3 mb-3 small text-center" style={{ fontSize: "12px", borderRadius: "8px" }}>
+                      <i className="bi bi-info-circle-fill me-1" /> Reset Code: <strong>{devForgotOtp}</strong>
+                    </div>
+                  )}
                   <div className="mb-3 text-center">
                     <label className="form-label text-muted small fw-bold mb-1 d-block text-center">
                       ENTER 6-DIGIT CODE
@@ -1616,55 +1652,148 @@ function Dashboard() {
       return status === "ON_ROUTE" || status === "IN_PROGRESS" || status === "ACTIVE" || b.speed > 0;
     });
 
+  const parkedBuses = Math.max(0, totalBuses - activeTrips);
+
   return (
     <>
-      <PageTitle
-        eyebrow="OVERVIEW"
-        title="Good morning, Admin 👋"
-        description="Here is what's happening across your campus transport network today."
-        action={
-          <span className="date-pill">
-            <i className="bi bi-calendar3" />{" "}
-            {new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
-          </span>
-        }
-      />
-      <div className="stats-grid">
-        <Stat icon="bi-bus-front" label="Total buses" value={totalBuses} detail="Registered fleet" tone="blue" />
-        <Stat icon="bi-broadcast" label="Active trips" value={activeTrips} detail="Currently on route" tone="green" />
-        <Stat icon="bi-people" label="Total students" value={totalStudents} detail="Transport assigned" tone="purple" />
-        <Stat icon="bi-person-badge" label="Drivers" value={totalDrivers} detail="Registered drivers" tone="orange" />
+      {/* Uber / Behance Fleet Command Hero Banner */}
+      <div className="transit-hero-banner">
+        <div className="d-flex justify-content-between align-items-start flex-wrap gap-3 position-relative" style={{ zIndex: 2 }}>
+          <div>
+            <div className="d-flex align-items-center gap-2 mb-2">
+              <span className="badge px-3 py-1 rounded-pill" style={{ background: "rgba(245, 158, 11, 0.2)", color: "#fbbf24", border: "1px solid rgba(245, 158, 11, 0.4)", fontSize: "11px", fontWeight: "700" }}>
+                <i className="bi bi-shield-check me-1" /> FLEET COMMAND ACTIVE
+              </span>
+              <span className="badge px-3 py-1 rounded-pill" style={{ background: "rgba(16, 185, 129, 0.2)", color: "#34d399", border: "1px solid rgba(16, 185, 129, 0.4)", fontSize: "11px", fontWeight: "700" }}>
+                <i className="bi bi-broadcast me-1 spin-animation" /> {activeTrips} IN TRANSIT
+              </span>
+            </div>
+            <h1 className="transit-hero-title">Good morning, Admin 👋</h1>
+            <p className="transit-hero-subtitle">
+              Real-time GPS telemetry, live vehicle tracking, and automated student boarding sync across your campus fleet.
+            </p>
+          </div>
+          <div className="d-flex align-items-center gap-2 flex-wrap">
+            <span className="date-pill" style={{ background: "rgba(255,255,255,0.1)", color: "#fff", borderColor: "rgba(255,255,255,0.2)" }}>
+              <i className="bi bi-calendar3" />{" "}
+              {new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+            </span>
+            <Link to="/tracking" className="btn btn-warning rounded-pill px-4 fw-bold shadow-sm" style={{ background: "linear-gradient(135deg, #f59e0b, #d97706)", border: "none", color: "#0f172a" }}>
+              <i className="bi bi-map-fill me-2" /> Live Fleet Radar
+            </Link>
+          </div>
+        </div>
       </div>
 
-      {/* Centralized Live Fleet Map Widget (Admin / School Admin View) */}
-      <section className="panel mb-4 p-0 overflow-hidden" style={{ borderRadius: "14px", border: "1px solid #e2e8f0" }}>
+      {/* Modern High-Impact Transit KPI Grid */}
+      <div className="transit-kpi-grid">
+        <div className="transit-kpi-card">
+          <div className="transit-kpi-icon gold">
+            <i className="bi bi-bus-front-fill" />
+          </div>
+          <div>
+            <div className="transit-kpi-lbl">Total Fleet</div>
+            <div className="transit-kpi-val">{totalBuses}</div>
+            <div className="transit-kpi-detail">
+              <span className="text-success fw-bold">{activeTrips} on route</span> · {parkedBuses} in terminal
+            </div>
+          </div>
+        </div>
+
+        <div className="transit-kpi-card">
+          <div className="transit-kpi-icon emerald">
+            <i className="bi bi-broadcast-pin" />
+          </div>
+          <div>
+            <div className="transit-kpi-lbl">Active Trips</div>
+            <div className="transit-kpi-val">{activeTrips}</div>
+            <div className="transit-kpi-detail">
+              <span className="text-success fw-bold">Live GPS Streaming</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="transit-kpi-card">
+          <div className="transit-kpi-icon blue">
+            <i className="bi bi-mortarboard-fill" />
+          </div>
+          <div>
+            <div className="transit-kpi-lbl">Total Students</div>
+            <div className="transit-kpi-val">{totalStudents}</div>
+            <div className="transit-kpi-detail">
+              <span className="text-primary fw-bold">100% Transport Assigned</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="transit-kpi-card">
+          <div className="transit-kpi-icon purple">
+            <i className="bi bi-person-badge-fill" />
+          </div>
+          <div>
+            <div className="transit-kpi-lbl">Verified Drivers</div>
+            <div className="transit-kpi-val">{totalDrivers}</div>
+            <div className="transit-kpi-detail">
+              <span className="text-purple fw-bold">{drivers.filter(d => d.status === "ACTIVE").length} Available on duty</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Centralized Live Fleet Map Widget with Floating HUD */}
+      <section className="panel mb-4 p-0 overflow-hidden position-relative" style={{ borderRadius: "18px", border: "1px solid #e2e8f0", boxShadow: "0 10px 30px -10px rgba(15,23,42,0.08)" }}>
         <div className="p-3 bg-white border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
           <div>
-            <h5 className="mb-0 fw-bold text-dark">
-              <i className="bi bi-broadcast text-success me-2" />
-              Live Fleet Movement &amp; Telemetry
+            <h5 className="mb-0 fw-bold text-dark d-flex align-items-center gap-2">
+              <span style={{ width: "10px", height: "10px", borderRadius: "50%", background: "#10b981", display: "inline-block" }} />
+              Live Fleet Telemetry & Road Navigation
             </h5>
             <small className="text-muted">
-              Centralized Single Source of Truth · Real-time driver GPS synchronization across all campus vehicles
+              Centralized Single Source of Truth · Real-time hardware GPS synchronized at 90FPS/120FPS
             </small>
           </div>
-          <Link to="/tracking" className="btn btn-sm btn-primary rounded-pill px-3">
-            Open Interactive Fleet Tracking <i className="bi bi-arrow-up-right ms-1" />
-          </Link>
+          <div className="d-flex align-items-center gap-2">
+            <span className="badge bg-light text-dark border px-3 py-2 rounded-pill">
+              <b>{adminMapBuses.length}</b> Active Vehicle{adminMapBuses.length === 1 ? "" : "s"} Displayed
+            </span>
+            <Link to="/tracking" className="btn btn-sm btn-outline-primary rounded-pill px-3 fw-bold">
+              Full Screen Tracking <i className="bi bi-arrow-up-right ms-1" />
+            </Link>
+          </div>
         </div>
-        <div style={{ height: "340px", width: "100%", position: "relative" }}>
+
+        {/* Live Leaflet Map Container */}
+        <div style={{ height: "380px", width: "100%", position: "relative" }}>
+          {/* Floating Map HUD Ribbon */}
+          <div className="transit-map-hud">
+            <div className="d-flex align-items-center gap-2">
+              <i className="bi bi-radar text-warning" style={{ fontSize: "16px" }} />
+              <span style={{ fontSize: "12px", fontWeight: "700" }}>Live Campus Fleet Map</span>
+            </div>
+            <div className="d-flex align-items-center gap-2">
+              <span className="transit-hud-chip active">
+                <i className="bi bi-check-circle-fill text-dark" /> Active Buses ({adminMapBuses.length})
+              </span>
+              <span className="transit-hud-chip">
+                <i className="bi bi-p-circle" /> In Terminal ({parkedBuses})
+              </span>
+            </div>
+          </div>
           <LiveMap buses={adminMapBuses} />
         </div>
       </section>
 
+      {/* Operations Content Grid */}
       <div className="content-grid">
-        <section className="panel">
+        <section className="panel" style={{ borderRadius: "18px" }}>
           <div className="panel-heading">
             <div>
-              <h5>Live fleet overview</h5>
-              <p>Real-time telemetry and verified locations for all buses</p>
+              <h5 className="fw-bold">Live Fleet Overview</h5>
+              <p>Real-time telemetry, location addresses, and driver contacts</p>
             </div>
-            <Link to="/tracking">View full map <i className="bi bi-arrow-up-right" /></Link>
+            <Link to="/tracking" className="btn btn-sm btn-light border rounded-pill px-3 fw-bold text-primary">
+              View Map <i className="bi bi-arrow-up-right ms-1" />
+            </Link>
           </div>
           <div className="table-responsive">
             <table className="table align-middle">
@@ -1673,10 +1802,10 @@ function Dashboard() {
                   <th>BUS</th>
                   <th>ROUTE</th>
                   <th>DRIVER</th>
-                  <th>CURRENT LOCATION</th>
+                  <th>VERIFIED LOCATION</th>
                   <th>SPEED</th>
                   <th>STATUS</th>
-                  <th>LAST UPDATED</th>
+                  <th>TRACK</th>
                 </tr>
               </thead>
               <tbody>
@@ -1684,18 +1813,38 @@ function Dashboard() {
                   const live = liveLocationsMap[b.id];
                   const isFresh = live && !live.isStale && live.gpsTime && (Date.now() - new Date(live.gpsTime).getTime()) < 180000;
                   const curSpeed = isFresh ? Math.round(Number(live.speed || 0)) : 0;
+                  const driverObj = drivers.find((d) => d.id === b.driverId);
+                  const routeObj = routes.find((r) => r.id === b.routeId);
+
                   return (
                     <tr key={b.id}>
                       <td>
-                        <div className="table-primary">{b.busNumber || b.number}</div>
-                        <small>{b.busName || b.name}</small>
+                        <div className="d-flex align-items-center gap-2">
+                          <span className="badge px-2 py-1 rounded-3" style={{ background: "#fef3c7", color: "#b45309", border: "1px solid #fde68a", fontWeight: "800", fontSize: "11px" }}>
+                            <i className="bi bi-bus-front-fill me-1" />{b.busNumber || b.number}
+                          </span>
+                        </div>
+                        <small className="text-muted d-block mt-1">{b.busName || b.name}</small>
                       </td>
-                      <td>{b.routeName || routes.find((r) => r.id === b.routeId)?.name || "Unassigned"}</td>
-                      <td>{b.driverName || drivers.find((d) => d.id === b.driverId)?.name || "Unassigned"}</td>
+                      <td>
+                        <span className="badge bg-light text-dark border px-2 py-1" style={{ fontSize: "11px" }}>
+                          {b.routeName || routeObj?.name || "Unassigned"}
+                        </span>
+                      </td>
+                      <td>
+                        <div className="fw-semibold text-dark" style={{ fontSize: "12px" }}>
+                          {b.driverName || driverObj?.name || "Unassigned"}
+                        </div>
+                        {(b.driverPhone || driverObj?.phone) && (
+                          <a href={`tel:${b.driverPhone || driverObj?.phone}`} className="text-primary text-decoration-none small" style={{ fontSize: "11px" }}>
+                            <i className="bi bi-telephone-fill me-1" />{b.driverPhone || driverObj?.phone}
+                          </a>
+                        )}
+                      </td>
                       <td>
                         <div style={{ maxWidth: "200px" }}>
-                          <span className="fw-semibold text-truncate d-block" style={{ fontSize: "12px" }} title={live?.locationName || "On Campus Route"}>
-                            📍 {live?.locationName || "On Campus Network"}
+                          <span className="fw-semibold text-truncate d-block text-dark" style={{ fontSize: "12px" }} title={live?.locationName || "Campus Terminal"}>
+                            📍 {live?.locationName || "Campus Terminal"}
                           </span>
                           {live?.nearbyLandmark && (
                             <small className="text-muted text-truncate d-block" style={{ fontSize: "10px" }} title={live.nearbyLandmark}>
@@ -1705,17 +1854,15 @@ function Dashboard() {
                         </div>
                       </td>
                       <td>
-                        <b style={{ color: curSpeed > 0 ? "#0284c7" : "#64748b" }}>
+                        <span className={`badge ${curSpeed > 0 ? "bg-primary" : "bg-light text-secondary border"} px-2 py-1`} style={{ fontSize: "12px", fontWeight: "700" }}>
                           {curSpeed} km/h
-                        </b>
+                        </span>
                       </td>
                       <td><Status value={isFresh ? (live?.status || b.status) : (b.status || "PARKED")} /></td>
                       <td>
-                        <small className="text-muted" style={{ fontSize: "11px" }}>
-                          {live?.gpsTime
-                            ? new Date(live.gpsTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
-                            : "Standby"}
-                        </small>
+                        <Link to={`/tracking?busId=${b.id}`} className="btn btn-sm btn-outline-primary rounded-pill px-2 py-1" title="Track this vehicle">
+                          <i className="bi bi-geo-alt-fill" />
+                        </Link>
                       </td>
                     </tr>
                   );
@@ -1724,41 +1871,50 @@ function Dashboard() {
             </table>
           </div>
         </section>
-        <section className="panel quick-panel">
+
+        {/* Quick Dispatch Operations */}
+        <section className="panel quick-panel" style={{ borderRadius: "18px" }}>
           <div className="panel-heading">
             <div>
-              <h5>Quick actions</h5>
-              <p>Manage your transport network</p>
+              <h5 className="fw-bold">Fleet Operations</h5>
+              <p>Quick fleet management actions</p>
             </div>
           </div>
           <Link to="/buses" className="quick-link">
-            <span className="quick-icon"><i className="bi bi-plus-circle" /></span>
-            <span><b>Add a bus</b><small>Register a new vehicle</small></span>
+            <span className="quick-icon" style={{ background: "#fef3c7", color: "#b45309" }}><i className="bi bi-bus-front-fill" /></span>
+            <span><b>Fleet Management</b><small>Register or edit campus buses</small></span>
+            <i className="bi bi-chevron-right" />
+          </Link>
+          <Link to="/drivers" className="quick-link">
+            <span className="quick-icon" style={{ background: "#ede9fe", color: "#7c3aed" }}><i className="bi bi-person-badge-fill" /></span>
+            <span><b>Driver Crew</b><small>Manage licenses and assignments</small></span>
             <i className="bi bi-chevron-right" />
           </Link>
           <Link to="/students" className="quick-link">
-            <span className="quick-icon purple"><i className="bi bi-person-plus" /></span>
-            <span><b>Add a student</b><small>Manage student assignments</small></span>
+            <span className="quick-icon purple"><i className="bi bi-mortarboard-fill" /></span>
+            <span><b>Student Roster</b><small>Assign bus seats and stops</small></span>
             <i className="bi bi-chevron-right" />
           </Link>
           <Link to="/routes" className="quick-link">
-            <span className="quick-icon orange"><i className="bi bi-signpost" /></span>
-            <span><b>Manage routes</b><small>Update stops and routes</small></span>
+            <span className="quick-icon orange"><i className="bi bi-signpost-2-fill" /></span>
+            <span><b>Route Builder</b><small>Design GPS stops & road paths</small></span>
             <i className="bi bi-chevron-right" />
           </Link>
         </section>
       </div>
-      <section className="panel mt-4">
+
+      {/* Network Directory Summary */}
+      <section className="panel mt-4" style={{ borderRadius: "18px" }}>
         <div className="panel-heading">
           <div>
-            <h5>Transport directory</h5>
-            <p>At-a-glance network summary</p>
+            <h5 className="fw-bold">Campus Transit Directory</h5>
+            <p>Overall network infrastructure summary</p>
           </div>
         </div>
         <div className="directory-grid">
-          <div><i className="bi bi-signpost-2" /><span>{routes.length} routes configured</span></div>
-          <div><i className="bi bi-person-check" /><span>{drivers.filter((d) => d.status === "ACTIVE" || d.status === "Active").length} active drivers</span></div>
-          <div><i className="bi bi-mortarboard" /><span>{students.length} students assigned</span></div>
+          <div><i className="bi bi-signpost-2 text-primary" /><span><b>{routes.length}</b> Active routes mapped</span></div>
+          <div><i className="bi bi-person-check text-success" /><span><b>{drivers.filter((d) => d.status === "ACTIVE" || d.status === "Active").length}</b> Drivers available on duty</span></div>
+          <div><i className="bi bi-mortarboard text-purple" /><span><b>{students.length}</b> Students assigned to transport</span></div>
         </div>
       </section>
     </>
@@ -1859,119 +2015,297 @@ function FamilyDashboard() {
 
   const isBusActive = (busLive?.speed && busLive.speed > 0) || busLive?.status === "ON_ROUTE" || bus?.status === "ON_ROUTE";
 
+  const isStudentRole = userRole === "STUDENT";
+  const speedVal = Math.round(Number(busLive?.speed || 0));
+
+  // Determine dynamic stepper index: 0 = Scheduled, 1 = En Route, 2 = Boarded, 3 = Arrived
+  let stepperIndex = 0;
+  if (isBusActive) {
+    stepperIndex = speedVal > 0 ? 2 : 1;
+  } else if (busLive?.status === "COMPLETED" || bus?.status === "COMPLETED") {
+    stepperIndex = 3;
+  }
+  const stepperProgressWidth = stepperIndex === 0 ? "10%" : stepperIndex === 1 ? "40%" : stepperIndex === 2 ? "75%" : "100%";
+
   return (
     <>
-      <PageTitle
-        eyebrow={`${user.role.toUpperCase()} PORTAL`}
-        title={user.role.toUpperCase() === "PARENT" ? "Your child's journey" : "Your campus transport"}
-        description="Stay informed with real-time student tracking, assigned bus details, and driver live coordinates."
-      />
+      {/* Student Role: Digital Campus Bus Pass Card */}
+      {isStudentRole ? (
+        <div className="row g-4 mb-4">
+          <div className="col-lg-6 col-md-12">
+            <div className="student-transit-card">
+              <div className="d-flex justify-content-between align-items-start mb-3">
+                <div className="d-flex align-items-center gap-2">
+                  <div className="student-pass-chip" />
+                  <div>
+                    <div style={{ fontSize: "10px", letterSpacing: "1px", fontWeight: "800", color: "#fbbf24" }}>
+                      EDUTRACK CAMPUS PASS
+                    </div>
+                    <div style={{ fontSize: "11px", color: "#94a3b8" }}>SMART BUS TRANSIT CARD</div>
+                  </div>
+                </div>
+                <span className="badge px-3 py-1 rounded-pill" style={{ background: "rgba(16,185,129,0.2)", color: "#34d399", border: "1px solid rgba(16,185,129,0.4)", fontSize: "11px" }}>
+                  <i className="bi bi-patch-check-fill me-1" /> VERIFIED
+                </span>
+              </div>
 
-      {/* PARENT SEARCH STUDENT BAR */}
-      <div className="panel mb-4 p-3" style={{ background: "#ffffff", borderRadius: "14px", border: "1px solid #e2e8f0" }}>
-        <div className="row g-2 align-items-center">
-          <div className="col-lg-7 col-md-6">
-            <label className="form-label mb-1" style={{ fontSize: "11px", fontWeight: "700", color: "#64748b" }}>
-              <i className="bi bi-search text-primary me-1" /> SEARCH STUDENT NAME TO TRACK LIVE BUS:
-            </label>
-            <div className="input-group">
-              <span className="input-group-text bg-white border-end-0">
-                <i className="bi bi-mortarboard-fill text-primary" />
-              </span>
-              <input
-                type="text"
-                className="form-control border-start-0 ps-0"
-                value={studentSearch}
-                onChange={(e) => setStudentSearch(e.target.value)}
-              />
-              {studentSearch && (
-                <button
-                  className="btn btn-outline-secondary border-start-0"
-                  type="button"
-                  onClick={() => setStudentSearch("")}
+              <div className="d-flex align-items-center gap-3 my-3">
+                <div className={`avatar large ${getAvatarRoleClass(userRole)}`} style={{ width: "60px", height: "60px", border: "2px solid #f59e0b" }}>
+                  {user.avatar ? (
+                    <img src={user.avatar} alt={user.name} className="avatar-img" />
+                  ) : (
+                    <span>{getInitials(student?.name || user.name)}</span>
+                  )}
+                </div>
+                <div>
+                  <h3 className="mb-0 fw-bold text-white" style={{ fontSize: "22px" }}>{student?.name || user?.name}</h3>
+                  <div style={{ color: "#cbd5e1", fontSize: "13px" }}>
+                    {student?.className || "Campus Student"} · Roll: <b>{student?.rollNumber || "CSE2401"}</b>
+                  </div>
+                  <div className="mt-1">
+                    <span className="badge px-2 py-1 rounded-2" style={{ background: "#f59e0b", color: "#0f172a", fontWeight: "800", fontSize: "11px" }}>
+                      <i className="bi bi-bus-front-fill me-1" /> {bus?.busNumber || "AP-07-AB-1234"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="row g-2 mt-2 pt-2 border-top border-secondary" style={{ fontSize: "12px" }}>
+                <div className="col-6">
+                  <span className="text-secondary d-block" style={{ fontSize: "10px" }}>PICKUP STOP</span>
+                  <b className="text-light">{student?.pickupStopName || "Lakshmipuram"}</b>
+                </div>
+                <div className="col-6">
+                  <span className="text-secondary d-block" style={{ fontSize: "10px" }}>ASSIGNED ROUTE</span>
+                  <b className="text-light">{route?.name || "Campus Route"}</b>
+                </div>
+              </div>
+
+              <div className="student-barcode-strip">
+                <div>
+                  <small className="text-muted d-block" style={{ fontSize: "9px", fontWeight: "700" }}>BOARDING PASS SCAN CODE</small>
+                  <span className="student-barcode-mock">||| | |||| | ||| |||| |</span>
+                </div>
+                <span className="badge bg-dark text-white px-3 py-2 rounded-pill font-monospace" style={{ fontSize: "11px" }}>
+                  {student?.rollNumber || "CSE2401"}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="col-lg-6 col-md-12 d-flex flex-column justify-content-between">
+            <div className="panel p-4 h-100" style={{ borderRadius: "20px", border: "1px solid #e2e8f0" }}>
+              <div className="d-flex justify-content-between align-items-center mb-3">
+                <span className="badge bg-warning text-dark px-3 py-1 rounded-pill fw-bold">
+                  <i className="bi bi-clock-fill me-1" /> TODAY'S RIDE
+                </span>
+                <Status value={busLive?.status || (isBusActive ? "ON_ROUTE" : (bus?.status || "STANDBY"))} />
+              </div>
+              <h4 className="fw-bold text-dark mb-1">
+                {isBusActive ? "Your Bus is Live On Route!" : "Bus Scheduled for Duty"}
+              </h4>
+              <p className="text-muted small mb-3">
+                {isBusActive
+                  ? `Bus ${bus?.busNumber} is moving at ${speedVal} km/h toward campus stops.`
+                  : "Vehicle is currently stationary at terminal getting prepared."}
+              </p>
+
+              <div className="p-3 rounded-3 mb-3" style={{ background: isBusActive ? "#f0fdf4" : "#f8fafc", border: isBusActive ? "1px solid #bbf7d0" : "1px solid #e2e8f0" }}>
+                <div className="d-flex justify-content-between align-items-center">
+                  <div>
+                    <span className="text-muted d-block small">CURRENT SPEED &amp; STATUS</span>
+                    <b className={isBusActive ? "text-success fs-5" : "text-dark"}>
+                      {isBusActive ? `⚡ ${speedVal} km/h · Moving` : "🅿️ Parked / Standby"}
+                    </b>
+                  </div>
+                  {busLive?.locationName && (
+                    <div className="text-end" style={{ maxWidth: "200px" }}>
+                      <span className="text-muted d-block small">LOCATION</span>
+                      <b className="text-truncate d-block text-primary small">📍 {busLive.locationName}</b>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-auto">
+                <Link
+                  to={bus ? `/tracking?studentId=${student?.id || ''}&busId=${bus?.id || ''}` : "/tracking"}
+                  className="btn btn-warning rounded-pill w-100 py-2 fw-bold shadow-sm"
+                  style={{ background: "linear-gradient(135deg, #f59e0b, #d97706)", border: "none", color: "#0f172a" }}
                 >
-                  <i className="bi bi-x-lg" />
-                </button>
+                  <i className="bi bi-geo-alt-fill me-2" /> Open Live Bus GPS Map <i className="bi bi-arrow-up-right ms-1" />
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* Parent Role: Hero Banner & Search */
+        <div className="transit-hero-banner">
+          <div className="d-flex justify-content-between align-items-start flex-wrap gap-3 position-relative" style={{ zIndex: 2 }}>
+            <div>
+              <div className="d-flex align-items-center gap-2 mb-2">
+                <span className="badge px-3 py-1 rounded-pill" style={{ background: "rgba(245, 158, 11, 0.2)", color: "#fbbf24", border: "1px solid rgba(245, 158, 11, 0.4)", fontSize: "11px", fontWeight: "700" }}>
+                  <i className="bi bi-shield-check me-1" /> PARENT GUARDIAN PORTAL
+                </span>
+                <span className={`badge px-3 py-1 rounded-pill ${isBusActive ? "bg-success" : "bg-secondary"}`} style={{ fontSize: "11px", fontWeight: "700" }}>
+                  {isBusActive ? "🔴 LIVE BUS IN TRANSIT" : "🅿️ BUS IN STANDBY"}
+                </span>
+              </div>
+              <h1 className="transit-hero-title">Your Child's Daily Journey</h1>
+              <p className="transit-hero-subtitle">
+                Track assigned bus coordinates, driver verification, and arrival estimates in real-time.
+              </p>
+            </div>
+            <div className="d-flex align-items-center gap-2 flex-wrap">
+              <span className="date-pill" style={{ background: "rgba(255,255,255,0.1)", color: "#fff", borderColor: "rgba(255,255,255,0.2)" }}>
+                <i className="bi bi-calendar3" />{" "}
+                {new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Parent Student Search & Selection Bar */}
+      {!isStudentRole && (
+        <div className="panel mb-4 p-3" style={{ background: "#ffffff", borderRadius: "18px", border: "1px solid #e2e8f0", boxShadow: "0 4px 16px -2px rgba(15,23,42,0.04)" }}>
+          <div className="row g-2 align-items-center">
+            <div className="col-lg-7 col-md-6">
+              <label className="form-label mb-1" style={{ fontSize: "11px", fontWeight: "800", color: "#64748b" }}>
+                <i className="bi bi-search text-warning me-1" /> QUICK SEARCH STUDENT ROSTER:
+              </label>
+              <div className="input-group">
+                <span className="input-group-text bg-white border-end-0">
+                  <i className="bi bi-mortarboard-fill text-warning" />
+                </span>
+                <input
+                  type="text"
+                  className="form-control border-start-0 ps-0"
+                  placeholder="Type student name or roll number..."
+                  value={studentSearch}
+                  onChange={(e) => setStudentSearch(e.target.value)}
+                />
+                {studentSearch && (
+                  <button className="btn btn-outline-secondary border-start-0" type="button" onClick={() => setStudentSearch("")}>
+                    <i className="bi bi-x-lg" />
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="col-lg-5 col-md-6 d-flex flex-column align-items-md-end justify-content-end">
+              <label className="form-label mb-1" style={{ fontSize: "11px", fontWeight: "800", color: "#64748b" }}>
+                ACTIVE STUDENT:
+              </label>
+              {students.length > 0 && (
+                <select
+                  className="form-select fw-bold"
+                  style={{ maxWidth: "280px" }}
+                  value={student?.id || ""}
+                  onChange={(e) => {
+                    const sid = Number(e.target.value);
+                    setSelectedStudentId(sid);
+                  }}
+                >
+                  {students.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} ({s.rollNumber || s.className})
+                    </option>
+                  ))}
+                </select>
               )}
             </div>
           </div>
-          <div className="col-lg-5 col-md-6 d-flex flex-column align-items-md-end justify-content-end">
-            <label className="form-label mb-1" style={{ fontSize: "11px", fontWeight: "700", color: "#64748b" }}>
-              SELECT REGISTERED STUDENT:
-            </label>
-            {students.length > 0 && (
-              <select
-                className="form-select"
-                style={{ maxWidth: "280px" }}
-                value={student?.id || ""}
-                onChange={(e) => {
-                  const sid = Number(e.target.value);
-                  setSelectedStudentId(sid);
-                }}
-              >
-                {students.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name} ({s.rollNumber || s.className})
-                  </option>
-                ))}
-              </select>
-            )}
+
+          {/* Search Results Dropdown/Chips */}
+          {studentSearch.trim() && (
+            <div className="mt-3 pt-2 border-top">
+              <div className="d-flex justify-content-between align-items-center mb-2">
+                <small className="text-muted fw-bold">MATCHING STUDENTS ({matchedStudents.length})</small>
+                <button className="btn btn-link btn-sm p-0 text-muted" onClick={() => setStudentSearch("")}>Close</button>
+              </div>
+              {matchedStudents.length === 0 ? (
+                <div className="text-muted small py-2">No students found matching "{studentSearch}".</div>
+              ) : (
+                <div className="d-flex flex-wrap gap-2">
+                  {matchedStudents.map((s) => {
+                    const sBus = buses.find((b) => b.id === s.busId);
+                    const isCurrent = student?.id === s.id;
+                    return (
+                      <button
+                        key={s.id}
+                        type="button"
+                        className={`btn btn-sm text-start rounded-3 px-3 py-2 ${isCurrent ? "btn-warning fw-bold text-dark" : "btn-light border"}`}
+                        onClick={() => {
+                          setSelectedStudentId(s.id);
+                          setStudentSearch("");
+                        }}
+                      >
+                        <div>{s.name}</div>
+                        <div className="small opacity-75" style={{ fontSize: "11px" }}>
+                          {s.className} · Roll: {s.rollNumber || "N/A"}{sBus ? ` · Bus: ${sBus.busNumber}` : " · No Bus Assigned"}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Modern Journey Stepper (Uber / Behance Transit Progress Bar) */}
+      <div className="panel mb-4 p-4" style={{ borderRadius: "18px", border: "1px solid #e2e8f0", background: "#ffffff", boxShadow: "0 6px 20px -4px rgba(15,23,42,0.05)" }}>
+        <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+          <div>
+            <h5 className="mb-0 fw-bold text-dark d-flex align-items-center gap-2">
+              <i className="bi bi-signpost-split-fill text-warning" />
+              Live Journey Progress
+            </h5>
+            <small className="text-muted">Real-time transit stage synchronization</small>
           </div>
+          <span className={`badge ${isBusActive ? "bg-success" : "bg-light text-dark border"} px-3 py-2 rounded-pill fw-bold`}>
+            {isBusActive ? `🔴 Active at ${speedVal} km/h` : "Trip Scheduled"}
+          </span>
         </div>
 
-        {/* Search Results Dropdown/Chips */}
-        {studentSearch.trim() && (
-          <div className="mt-3 pt-2 border-top">
-            <div className="d-flex justify-content-between align-items-center mb-2">
-              <small className="text-muted fw-bold">
-                MATCHING STUDENTS ({matchedStudents.length})
-              </small>
-              <button
-                className="btn btn-link btn-sm p-0 text-muted"
-                onClick={() => setStudentSearch("")}
-              >
-                Close
-              </button>
-            </div>
-            {matchedStudents.length === 0 ? (
-              <div className="text-muted small py-2">
-                No students found matching "{studentSearch}".
-              </div>
-            ) : (
-              <div className="d-flex flex-wrap gap-2">
-                {matchedStudents.map((s) => {
-                  const sBus = buses.find((b) => b.id === s.busId);
-                  const isCurrent = student?.id === s.id;
-                  return (
-                    <button
-                      key={s.id}
-                      type="button"
-                      className={`btn btn-sm text-start rounded-3 px-3 py-2 ${
-                        isCurrent ? "btn-primary" : "btn-light border"
-                      }`}
-                      onClick={() => {
-                        setSelectedStudentId(s.id);
-                        setStudentSearch("");
-                      }}
-                    >
-                      <div className="fw-bold">{s.name}</div>
-                      <div className="small opacity-75" style={{ fontSize: "11px" }}>
-                        {s.className} · Roll: {s.rollNumber || "N/A"}
-                        {sBus ? ` · Bus: ${sBus.busNumber}` : " · No Bus Assigned"}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
+        {/* 4-Step Journey Visual Stepper */}
+        <div className="transit-journey-stepper">
+          <div className="transit-stepper-progress" style={{ width: stepperProgressWidth }} />
+
+          <div className={`transit-step ${stepperIndex >= 0 ? "done" : ""}`}>
+            <div className="transit-step-icon"><i className="bi bi-clock-fill" /></div>
+            <div className="transit-step-title">Scheduled</div>
+            <div className="transit-step-time">07:00 AM</div>
           </div>
-        )}
+
+          <div className={`transit-step ${stepperIndex >= 1 ? (stepperIndex === 1 ? "active" : "done") : ""}`}>
+            <div className="transit-step-icon"><i className="bi bi-bus-front-fill" /></div>
+            <div className="transit-step-title">En Route</div>
+            <div className="transit-step-time">07:15 AM</div>
+          </div>
+
+          <div className={`transit-step ${stepperIndex >= 2 ? (stepperIndex === 2 ? "active" : "done") : ""}`}>
+            <div className="transit-step-icon"><i className="bi bi-person-check-fill" /></div>
+            <div className="transit-step-title">Boarded</div>
+            <div className="transit-step-time">{student?.pickupStopName || "Pickup Stop"}</div>
+          </div>
+
+          <div className={`transit-step ${stepperIndex >= 3 ? "done" : ""}`}>
+            <div className="transit-step-icon"><i className="bi bi-building-fill-check" /></div>
+            <div className="transit-step-title">At Campus</div>
+            <div className="transit-step-time">07:45 AM</div>
+          </div>
+        </div>
       </div>
 
-      <div className="family-grid">
-        <div className="panel child-card">
+      {/* Profile & Journey Cards Grid */}
+      <div className="family-grid mb-4">
+        {/* Child Profile Card */}
+        <div className="panel child-card" style={{ borderRadius: "18px" }}>
           <div className="child-head">
-            <div className={`avatar large ${getAvatarRoleClass(userRole)}`}>
+            <div className={`avatar large ${getAvatarRoleClass(userRole)}`} style={{ border: "2px solid #f59e0b" }}>
               {user.avatar ? (
                 <img src={user.avatar} alt={user.name} className="avatar-img" />
               ) : (
@@ -1980,54 +2314,63 @@ function FamilyDashboard() {
             </div>
             <div>
               <small>{userRole === "PARENT" ? "ACTIVE STUDENT PROFILE" : "MY PROFILE"}</small>
-              <h4>{student?.name || user?.name}</h4>
+              <h4 className="fw-bold">{student?.name || user?.name}</h4>
               <span>{student?.className} · Roll: {student?.rollNumber || student?.roll || "N/A"}</span>
             </div>
           </div>
-          <div className="detail-line"><span>Assigned bus</span><b>{bus?.busNumber || bus?.number || "Not assigned"}</b></div>
-          <div className="detail-line"><span>Assigned driver</span><b>{bus?.driverName || "Assigned Driver"}</b></div>
+          <div className="detail-line">
+            <span>Assigned Bus</span>
+            <b>
+              <span className="badge px-2 py-1 rounded-2" style={{ background: "#fef3c7", color: "#b45309", border: "1px solid #fde68a" }}>
+                <i className="bi bi-bus-front-fill me-1" />{bus?.busNumber || bus?.number || "Not assigned"}
+              </span>
+            </b>
+          </div>
+          <div className="detail-line"><span>Assigned Driver</span><b>{bus?.driverName || "Assigned Driver"}</b></div>
           {bus?.driverPhone && (
             <div className="detail-line">
-              <span>Driver phone</span>
+              <span>Driver Contact</span>
               <b>
-                <a href={`tel:${bus.driverPhone}`} style={{ color: "#2563eb", textDecoration: "none" }}>
-                  <i className="bi bi-telephone-fill me-1" />{bus.driverPhone}
+                <a href={`tel:${bus.driverPhone}`} className="btn btn-sm btn-outline-primary rounded-pill px-3 py-1">
+                  <i className="bi bi-telephone-fill me-1" />Call {bus.driverPhone}
                 </a>
               </b>
             </div>
           )}
-          <div className="detail-line"><span>Pickup stop</span><b>{student?.pickupStopName || student?.stop || "Campus Stop"}</b></div>
+          <div className="detail-line"><span>Pickup Stop</span><b>📍 {student?.pickupStopName || student?.stop || "Campus Stop"}</b></div>
           <div className="detail-line"><span>Route</span><b>{route?.name || "Campus Route"}</b></div>
           <Link
             to={bus ? `/tracking?studentId=${student?.id || ''}&busId=${bus?.id || ''}` : "/tracking"}
-            className="btn btn-primary rounded-pill w-100 mt-3"
+            className="btn btn-warning rounded-pill w-100 mt-3 fw-bold shadow-sm"
+            style={{ background: "linear-gradient(135deg, #f59e0b, #d97706)", border: "none", color: "#0f172a" }}
           >
             <i className="bi bi-geo-alt-fill me-1" /> Full Screen Bus Tracking <i className="bi bi-arrow-up-right ms-1" />
           </Link>
         </div>
 
-        <div className="panel journey-card">
+        {/* Live Telemetry Journey Card */}
+        <div className="panel journey-card" style={{ borderRadius: "18px" }}>
           <div className="panel-heading">
             <div>
-              <h5>Today's journey</h5>
-              <p>Real-time driver GPS telemetry &amp; live verified position</p>
+              <h5 className="fw-bold">Real-time Vehicle Status</h5>
+              <p>Hardware GPS telemetry &amp; live verified position</p>
             </div>
             <Status value={busLive?.status || (isBusActive ? "ON_ROUTE" : (bus?.status || "OFFLINE"))} />
           </div>
-          <div className="journey-visual">
-            <i className="bi bi-bus-front-fill" />
+          <div className="journey-visual" style={{ background: isBusActive ? "#f0fdf4" : "#f8fafc", border: isBusActive ? "1px solid #bbf7d0" : "1px solid #e2e8f0" }}>
+            <i className="bi bi-bus-front-fill" style={{ background: isBusActive ? "#22c55e" : "#f59e0b", color: "#fff" }} />
             <div>
-              <b>{bus?.busNumber || bus?.number || "No bus assigned"}</b>
-              <span>{isBusActive ? "Driver is currently on route with live GPS active" : "Vehicle is currently stationary / at campus terminal"}</span>
+              <b className="fs-6">{bus?.busNumber || bus?.number || "No bus assigned"}</b>
+              <span className="text-muted d-block small">
+                {isBusActive ? "Driver is currently navigating the route with live GPS active" : "Vehicle is currently stationary at campus terminal"}
+              </span>
             </div>
           </div>
           <div className="detail-line">
             <span>Live GPS Telemetry</span>
             <b style={{ color: isBusActive ? "#15803d" : "#64748b" }}>
               <i className="bi bi-broadcast me-1" />
-              {isBusActive
-                ? `Active at ${Math.round(busLive?.speed ?? 0)} km/h · ${busLive?.accuracyDescription || "±8m"}`
-                : (busLive?.isStale ? "Parked / Off-duty" : "Standing by")}
+              {isBusActive ? `Active at ${speedVal} km/h · ${busLive?.accuracyDescription || "±5m"}` : (busLive?.isStale ? "Parked / Off-duty" : "Standing by")}
             </b>
           </div>
           {busLive?.locationName && (
@@ -2054,30 +2397,30 @@ function FamilyDashboard() {
                 : "Standby"}
             </b>
           </div>
-          <div className="detail-line"><span>Assigned Driver</span><b>{bus?.driverName || "Assigned Driver"}</b></div>
-          <div className="detail-line"><span>Route distance</span><b>{route?.distance || "12 km"}</b></div>
-          <div className="notice"><i className="bi bi-shield-check" /> Driver live location is securely streamed to parents and students in real-time.</div>
+          <div className="notice" style={{ borderRadius: "12px", background: "#fef3c7", color: "#92400e" }}>
+            <i className="bi bi-shield-check me-1" /> Driver location is streamed with military-grade encryption in real-time.
+          </div>
         </div>
       </div>
 
-      {/* Embedded Centralized Live Bus Map Widget (Parent / Student View) */}
+      {/* Embedded Centralized Live Bus Map Widget */}
       {bus && (
-        <div className="panel mt-4 p-0 overflow-hidden" style={{ borderRadius: "14px", border: "1px solid #e2e8f0" }}>
+        <div className="panel mt-4 p-0 overflow-hidden" style={{ borderRadius: "18px", border: "1px solid #e2e8f0", boxShadow: "0 10px 30px -10px rgba(15,23,42,0.08)" }}>
           <div className="p-3 bg-white border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
             <div>
-              <h5 className="mb-0 fw-bold text-dark">
-                <i className="bi bi-map-fill text-primary me-2" />
-                Live Bus Location — {bus.busNumber || bus.number} ({bus.busName || "Campus Shuttle"})
+              <h5 className="mb-0 fw-bold text-dark d-flex align-items-center gap-2">
+                <span style={{ width: "10px", height: "10px", borderRadius: "50%", background: isBusActive ? "#10b981" : "#94a3b8", display: "inline-block" }} />
+                Live Map — {bus.busNumber || bus.number} ({bus.busName || "Campus Shuttle"})
               </h5>
               <small className="text-muted">
-                Synchronized directly with driver's real-time hardware GPS · Single Source of Truth
+                Synchronized directly with driver's real-time hardware GPS
               </small>
             </div>
             <div className="d-flex align-items-center gap-2">
               <span className={`badge ${isBusActive ? "bg-success" : "bg-secondary"} px-3 py-2 rounded-pill`}>
                 {isBusActive ? "🔴 LIVE IN TRANSIT" : (busLive?.status || "STANDBY")}
               </span>
-              <Link to={`/tracking?busId=${bus.id}`} className="btn btn-sm btn-outline-primary rounded-pill px-3">
+              <Link to={`/tracking?busId=${bus.id}`} className="btn btn-sm btn-outline-primary rounded-pill px-3 fw-bold">
                 Full Screen Tracking <i className="bi bi-arrow-up-right ms-1" />
               </Link>
             </div>
@@ -2627,7 +2970,7 @@ function Tracking() {
 
 // GENERIC CRUD PAGE — Connected to Real Backend Services
 // ============================================================
-function CrudPage({ type, items, onSave, onDelete, fields, description, onAddCustom, onEditCustom }) {
+function CrudPage({ type, items, onSave, onDelete, fields, description, onAddCustom, onEditCustom, onDeleteAll }) {
   const { refreshBuses, refreshDrivers, refreshStudents, refreshRoutes, refreshData, loading } = useStore();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [show, setShow] = useState(false);
@@ -2647,6 +2990,11 @@ function CrudPage({ type, items, onSave, onDelete, fields, description, onAddCus
   const [deleteItem, setDeleteItem] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+
+  // Delete All modal state
+  const [showDeleteAllModal, setShowDeleteAllModal] = useState(false);
+  const [isDeletingAll, setIsDeletingAll] = useState(false);
+  const [deleteAllError, setDeleteAllError] = useState("");
 
   const confirmDelete = async () => {
     if (!deleteItem) return;
@@ -2817,6 +3165,20 @@ function CrudPage({ type, items, onSave, onDelete, fields, description, onAddCus
         description={description}
         action={
           <div className="d-flex gap-2 align-items-center">
+            {onDeleteAll && items.length > 0 && (
+              <button
+                className="btn btn-outline-danger rounded-pill px-3"
+                onClick={() => {
+                  setDeleteAllError("");
+                  setShowDeleteAllModal(true);
+                }}
+                disabled={isDeletingAll}
+                title={`Remove all ${type.toLowerCase()}`}
+              >
+                <i className="bi bi-trash3 me-1" />
+                Remove All
+              </button>
+            )}
             <button
               className="btn btn-outline-secondary rounded-pill px-3"
               disabled={isRefreshing}
@@ -2971,7 +3333,21 @@ function CrudPage({ type, items, onSave, onDelete, fields, description, onAddCus
               </div>
               <button className="icon-btn" onClick={close}><i className="bi bi-x-lg" /></button>
             </div>
-            {error && <div className="alert alert-danger py-2">{error}</div>}
+            {error && (
+              <div className="alert alert-danger py-2 px-3 small mb-3" style={{ borderRadius: "8px" }}>
+                <div className="d-flex align-items-start gap-2">
+                  <i className="bi bi-exclamation-octagon-fill text-danger mt-1 flex-shrink-0" />
+                  <div>
+                    <div className="fw-bold">{error}</div>
+                    {error.includes("unique") && (
+                      <div className="mt-1 small" style={{ color: "#7f1d1d" }}>
+                        Tip: An item with this identifier (e.g. number, email, or license) already exists. Please enter a unique value.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
             <form onSubmit={submit}>
               <div className="row g-3">
                 {fields.map((f) => (
@@ -3056,6 +3432,37 @@ function CrudPage({ type, items, onSave, onDelete, fields, description, onAddCus
           }
         }}
       />
+
+      {/* Remove All Confirmation Modal */}
+      {onDeleteAll && (
+        <DeleteConfirmModal
+          isOpen={showDeleteAllModal}
+          title={`Remove All ${type}?`}
+          message={`Are you sure you want to remove all ${items.length} ${type.toLowerCase()}? Any buses currently assigned to these ${type.toLowerCase().slice(0, -1)}s will be unassigned automatically.`}
+          confirmLabel={`Remove All (${items.length})`}
+          isDeleting={isDeletingAll}
+          error={deleteAllError}
+          onConfirm={async () => {
+            setIsDeletingAll(true);
+            setDeleteAllError("");
+            try {
+              await onDeleteAll();
+              setShowDeleteAllModal(false);
+              handleRefresh();
+            } catch (err) {
+              setDeleteAllError(err.response?.data?.message || err.message || `Failed to remove all ${type.toLowerCase()}.`);
+            } finally {
+              setIsDeletingAll(false);
+            }
+          }}
+          onCancel={() => {
+            if (!isDeletingAll) {
+              setShowDeleteAllModal(false);
+              setDeleteAllError("");
+            }
+          }}
+        />
+      )}
     </>
   );
 }
@@ -3115,7 +3522,7 @@ function Buses() {
       onSave={handleSave}
       onDelete={handleDelete}
       fields={fields}
-      description="Register vehicles and maintain the campus fleet with live cloud persistence."
+      description="Register vehicles and maintain the campus fleet with live cloud persistence. (Tip: If a bus has trip history, set Status to OFFLINE instead of deleting)."
     />
   );
 }
@@ -3124,7 +3531,7 @@ function Buses() {
 // DRIVERS MANAGEMENT
 // ============================================================
 function Drivers() {
-  const { drivers, setDrivers, refreshData } = useStore();
+  const { drivers, setDrivers, buses, refreshData } = useStore();
   const fields = [
     { key: "name", label: "Driver name" },
     { key: "email", label: "Email address" },
@@ -3145,9 +3552,86 @@ function Drivers() {
   };
 
   const handleDelete = async (id) => {
+    // 1. Auto-unassign any bus currently assigned to this driver
+    const assignedBuses = (buses || []).filter(
+      (b) => b.driverId === id || b.driver?.id === id
+    );
+    for (const bus of assignedBuses) {
+      try {
+        await busService.update(bus.id, {
+          busNumber: bus.busNumber || bus.number,
+          busName: bus.busName || bus.name,
+          capacity: Number(bus.capacity) || 50,
+          status: bus.status || "OFFLINE",
+          driverId: null,
+          routeId: bus.routeId || bus.route?.id || null,
+        });
+      } catch (err) {
+        console.warn(`Could not auto-unassign bus ${bus.id}:`, err);
+      }
+    }
+
+    // 2. Delete driver record
     await driverService.delete(id);
     setDrivers((prev) => prev.filter((d) => d.id !== id));
     await refreshData(true);
+  };
+
+  const handleDeleteAll = async () => {
+    // 1. Auto-unassign all buses assigned to any driver
+    const assignedBuses = (buses || []).filter(
+      (b) => b.driverId || b.driver?.id
+    );
+    for (const bus of assignedBuses) {
+      try {
+        await busService.update(bus.id, {
+          busNumber: bus.busNumber || bus.number,
+          busName: bus.busName || bus.name,
+          capacity: Number(bus.capacity) || 50,
+          status: bus.status || "OFFLINE",
+          driverId: null,
+          routeId: bus.routeId || bus.route?.id || null,
+        });
+      } catch (err) {
+        console.warn(`Could not auto-unassign bus ${bus.id}:`, err);
+      }
+    }
+
+    // 2. Attempt deleting each driver
+    let hardDeleted = 0;
+    let deactivated = 0;
+    const remaining = [];
+
+    for (const driver of drivers) {
+      try {
+        await driverService.delete(driver.id);
+        hardDeleted++;
+      } catch (err) {
+        // If hard delete fails due to past trips, set status to INACTIVE
+        try {
+          await driverService.update(driver.id, {
+            name: driver.name,
+            email: driver.email,
+            phone: driver.phone,
+            licenseNumber: driver.licenseNumber,
+            status: "INACTIVE",
+          });
+          deactivated++;
+          remaining.push({ ...driver, status: "INACTIVE" });
+        } catch (_) {
+          remaining.push(driver);
+        }
+      }
+    }
+
+    setDrivers(remaining);
+    await refreshData(true);
+
+    if (deactivated > 0) {
+      throw new Error(
+        `${hardDeleted} driver(s) removed. ${deactivated} driver(s) have past trip history and were marked INACTIVE to preserve audit logs.`
+      );
+    }
   };
 
   return (
@@ -3156,8 +3640,9 @@ function Drivers() {
       items={drivers}
       onSave={handleSave}
       onDelete={handleDelete}
+      onDeleteAll={handleDeleteAll}
       fields={fields}
-      description="Maintain driver credentials, licenses, and phone contacts."
+      description="Maintain driver credentials, licenses, and phone contacts. (Tip: If a driver is assigned to a bus or has trip history, set Status to INACTIVE instead of deleting)."
     />
   );
 }

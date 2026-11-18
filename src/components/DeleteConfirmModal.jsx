@@ -94,11 +94,25 @@ export default function DeleteConfirmModal({
         {/* Error message banner */}
         {error && (
           <div
-            className="alert alert-danger py-2 px-3 text-start small mb-3 d-flex align-items-center gap-2"
-            style={{ fontSize: "12px" }}
+            className={`alert ${error.includes("INACTIVE") ? "alert-warning" : "alert-danger"} py-2 px-3 text-start small mb-3`}
+            style={{ fontSize: "12px", borderRadius: "8px" }}
           >
-            <i className="bi bi-x-circle-fill flex-shrink-0" />
-            <div>{error}</div>
+            <div className="d-flex align-items-start gap-2">
+              <i className={`bi ${error.includes("INACTIVE") ? "bi-info-circle-fill text-warning" : "bi-exclamation-octagon-fill text-danger"} flex-shrink-0 mt-1`} />
+              <div>
+                <div className="fw-bold">{error}</div>
+                {(error.includes("referenced") || error.includes("linked") || error.includes("trip")) && !error.includes("INACTIVE") && (
+                  <div className="text-muted mt-1" style={{ fontSize: "11px", color: "#7f1d1d" }}>
+                    <strong>How to solve:</strong> This record cannot be deleted while other data (such as trips, students, or routes) depend on it. Please reassign or remove the linked records first, or change its status to <strong>INACTIVE / OFFLINE</strong> instead.
+                  </div>
+                )}
+                {error.includes("unique") && (
+                  <div className="text-muted mt-1" style={{ fontSize: "11px", color: "#7f1d1d" }}>
+                    <strong>How to solve:</strong> A record with this value already exists in the system. Please enter a different, unique identifier.
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         )}
 

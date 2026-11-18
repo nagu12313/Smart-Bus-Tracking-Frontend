@@ -7,6 +7,25 @@ import api from './api';
 const TOKEN_KEY  = 'edutrack_token';
 const USER_KEY   = 'edutrack_user';
 
+function handleAuthError(err, fallbackMessage) {
+  if (err.response?.data?.data && typeof err.response.data.data === 'object' && !Array.isArray(err.response.data.data)) {
+    const fieldErrors = Object.values(err.response.data.data).filter(Boolean);
+    if (fieldErrors.length > 0) {
+      throw new Error(fieldErrors.join('. '));
+    }
+  }
+  if (err.response?.data?.message) {
+    throw new Error(err.response.data.message);
+  }
+  if (err.response?.data?.error) {
+    throw new Error(err.response.data.error);
+  }
+  if (!err.response) {
+    throw new Error('Unable to connect to the backend server. Please verify that the backend is running at http://localhost:8080.');
+  }
+  throw new Error(err.message || fallbackMessage);
+}
+
 export const authService = {
   /**
    * Login with email and password via backend REST API.
@@ -28,13 +47,7 @@ export const authService = {
 
       return { token, user };
     } catch (err) {
-      if (err.response?.data?.message) {
-        throw new Error(err.response.data.message);
-      }
-      if (!err.response) {
-        throw new Error('Unable to connect to the backend server. Please check your network connection or verify that the backend is running.');
-      }
-      throw err;
+      handleAuthError(err, 'Failed to sign in. Please verify your credentials.');
     }
   },
 
@@ -42,58 +55,78 @@ export const authService = {
    * Send 6-digit OTP to user's email via Gmail SMTP / Brevo API
    */
   async sendOtp(email) {
-    const response = await api.post('/api/auth/send-otp', { email: (email || '').trim().toLowerCase() });
-    return response.data;
+    try {
+      const response = await api.post('/api/auth/send-otp', { email: (email || '').trim().toLowerCase() });
+      return response.data;
+    } catch (err) {
+      handleAuthError(err, 'Failed to send verification code. Please check the email address.');
+    }
   },
 
   /**
    * Verify 6-digit OTP code
    */
   async verifyOtp(email, otp) {
-    const response = await api.post('/api/auth/verify-otp', { email: (email || '').trim().toLowerCase(), otp: (otp || '').trim() });
-    return response.data;
+    try {
+      const response = await api.post('/api/auth/verify-otp', { email: (email || '').trim().toLowerCase(), otp: (otp || '').trim() });
+      return response.data;
+    } catch (err) {
+      handleAuthError(err, 'Invalid or expired verification code.');
+    }
   },
 
   /**
    * Request 6-digit password reset OTP
    */
   async forgotPassword(email) {
-    const response = await api.post('/api/auth/forgot-password', { email: (email || '').trim().toLowerCase() });
-    return response.data;
+    try {
+      const response = await api.post('/api/auth/forgot-password', { email: (email || '').trim().toLowerCase() });
+      return response.data;
+    } catch (err) {
+      handleAuthError(err, 'Failed to send reset code. Please ensure the email is registered.');
+    }
   },
 
   /**
    * Reset password with 6-digit OTP and new password
    */
   async resetPassword(email, otp, newPassword) {
-    const response = await api.post('/api/auth/reset-password', {
-      email: (email || '').trim().toLowerCase(),
-      otp: (otp || '').trim(),
-      newPassword,
-    });
-    return response.data;
+    try {
+      const response = await api.post('/api/auth/reset-password', {
+        email: (email || '').trim().toLowerCase(),
+        otp: (otp || '').trim(),
+        newPassword,
+      });
+      return response.data;
+    } catch (err) {
+      handleAuthError(err, 'Failed to reset password. Please check your verification code.');
+    }
   },
 
   /**
    * Register a new user with verified email OTP.
    */
   async register(name, email, password, role, otp) {
-    const response = await api.post('/api/auth/register', {
-      name: (name || '').trim(),
-      email: (email || '').trim().toLowerCase(),
-      password,
-      role,
-      otp: (otp || '').trim(),
-    });
-    const { token, ...user } = response.data.data;
-    if (user && !user.id && user.userId) {
-      user.id = user.userId;
+    try {
+      const response = await api.post('/api/auth/register', {
+        name: (name || '').trim(),
+        email: (email || '').trim().toLowerCase(),
+        password,
+        role,
+        otp: (otp || '').trim(),
+      });
+      const { token, ...user } = response.data.data;
+      if (user && !user.id && user.userId) {
+        user.id = user.userId;
+      }
+
+      localStorage.setItem(TOKEN_KEY, token);
+      localStorage.setItem(USER_KEY, JSON.stringify(user));
+
+      return { token, user };
+    } catch (err) {
+      handleAuthError(err, 'Registration failed. Please check your details.');
     }
-
-    localStorage.setItem(TOKEN_KEY, token);
-    localStorage.setItem(USER_KEY, JSON.stringify(user));
-
-    return { token, user };
   },
 
   /**

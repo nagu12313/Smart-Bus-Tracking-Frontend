@@ -154,7 +154,86 @@ export default function DriverTripLiveTracking({ tripId, onBack, onTripUpdated }
   const lastSendTimeRef = useRef(0);
   const lastGpsTimeRef = useRef(0);
 
-  // Geolocation Permission Lifecycle & Chrome Site Settings Monitor
+  // Proactively acquire real location and verify Chrome permission
+  const acquireRealLocation = useCallback((forceSend = false) => {
+    if (!("geolocation" in navigator)) {
+      setGeoPermission("unsupported");
+      setGeoError("Geolocation is not supported by your browser. Please use Google Chrome.");
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        if (!pos || !pos.coords) return;
+        const { latitude, longitude, accuracy, speed, heading } = pos.coords;
+        if (latitude == null || longitude == null) return;
+
+        setGeoPermission("granted");
+        setGeoError("");
+
+        const speedKmH = speed != null && !isNaN(speed) ? Math.max(0, speed * 3.6) : 0;
+        const now = Date.now();
+        lastCoordsRef.current = { latitude, longitude };
+        lastSendTimeRef.current = now;
+
+        setLiveLocation((prev) => ({
+          ...prev,
+          latitude,
+          longitude,
+          rawLatitude: latitude,
+          rawLongitude: longitude,
+          speed: speedKmH,
+          heading: heading != null && !isNaN(heading) ? heading : (prev.heading || 0),
+          accuracy: accuracy != null && !isNaN(accuracy) ? accuracy : 5,
+          gpsTime: new Date(pos.timestamp || now).toISOString(),
+          locationName: prev.locationName === "Acquiring GPS fix from driver device..." ? "Current Driver GPS Location" : prev.locationName,
+          status: trip?.status === "IN_PROGRESS" ? "ON_ROUTE" : (prev.status || "STANDBY"),
+          provider: "chrome-gps",
+          pingsCount: prev.pingsCount + 1,
+        }));
+
+        if (trip?.status === "IN_PROGRESS" || forceSend) {
+          const payload = {
+            busId: trip?.busId,
+            tripId: trip?.id,
+            latitude,
+            longitude,
+            speed: speedKmH,
+            heading: heading != null && !isNaN(heading) ? heading : null,
+            accuracy: accuracy != null && !isNaN(accuracy) ? accuracy : 5,
+            gpsTime: new Date(pos.timestamp || now).toISOString(),
+            provider: "chrome-gps",
+          };
+          trackingService.sendDriverLocation(payload)
+            .then(() => {
+              setIsTransmittingGps(true);
+              setLastTransmittedTime(new Date());
+            })
+            .catch((err) => {
+              console.warn("[GPS Send] Failed:", err?.response?.data?.message || err?.message);
+            });
+        }
+      },
+      (err) => {
+        console.warn("[Initial Location Request]", err.code, err.message);
+        if (err.code === 1) {
+          setGeoPermission("denied");
+          setGeoError("Chrome Location permission was denied. Please allow location in Chrome site settings.");
+        } else if (err.code === 2) {
+          setGeoError("GPS position unavailable. Please ensure Device Location/GPS is turned ON.");
+        } else if (err.code === 3) {
+          setGeoError("GPS fix timeout. Acquiring satellite signal...");
+        }
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 12000,
+        maximumAge: 0,
+      }
+    );
+  }, [trip?.status, trip?.busId, trip?.id]);
+
+  // When driver enters: immediately verify Chrome permission and get real GPS position
   useEffect(() => {
     let permStatusObj = null;
 
@@ -171,6 +250,8 @@ export default function DriverTripLiveTracking({ tripId, onBack, onTripUpdated }
           setGeoPermission(status.state);
           if (status.state === "denied") {
             setGeoError("Chrome Location permission is blocked. Bus tracking requires GPS permission.");
+          } else if (status.state === "granted") {
+            setGeoError("");
           }
 
           status.onchange = () => {
@@ -179,22 +260,22 @@ export default function DriverTripLiveTracking({ tripId, onBack, onTripUpdated }
               setGeoError("Chrome Location permission is blocked. Bus tracking requires GPS permission.");
             } else if (status.state === "granted") {
               setGeoError("");
+              acquireRealLocation();
             }
           };
         })
-        .catch(() => {
-          setGeoPermission("prompt");
-        });
-    } else {
-      setGeoPermission("prompt");
+        .catch(() => {});
     }
+
+    // Proactively request position immediately to get actual GPS fix and confirm permission
+    acquireRealLocation();
 
     return () => {
       if (permStatusObj) {
         permStatusObj.onchange = null;
       }
     };
-  }, []);
+  }, [acquireRealLocation]);
 
   // Continuous Real-Time Driver Phone GPS Tracking
   useEffect(() => {
@@ -633,9 +714,19 @@ export default function DriverTripLiveTracking({ tripId, onBack, onTripUpdated }
         <div className="d-flex align-items-center gap-2 flex-wrap">
           {/* Real-time GPS & Permission Badges */}
           <span className={`badge px-3 py-2 rounded-pill fw-bold border ${geoPermission === "granted" ? "bg-success-subtle text-success border-success" : geoPermission === "denied" ? "bg-danger-subtle text-danger border-danger" : "bg-warning-subtle text-warning border-warning"}`}>
-            <i className={`bi ${geoPermission === "granted" ? "bi-geo-alt-fill" : geoPermission === "denied" ? "bi-shield-slash" : "bi-exclamation-circle"} me-1`} />
-            {geoPermission === "granted" ? "Chrome GPS Allowed" : geoPermission === "denied" ? "Chrome GPS Blocked" : "Permission Required"}
+            <i className={`bi ${geoPermission === "granted" ? "bi-geo-alt-fill" : geoPermission === "denied" ? "bi-shield-slash" : "bi-arrow-repeat spin-animation"} me-1`} />
+            {geoPermission === "granted" ? `Chrome GPS Allowed ${liveLocation.accuracy != null ? `(±${Math.round(liveLocation.accuracy)}m)` : ""}` : geoPermission === "denied" ? "Chrome GPS Blocked" : "Verifying Chrome GPS..."}
           </span>
+
+          {geoPermission !== "granted" && geoPermission !== "denied" && (
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-primary fw-bold rounded-pill px-3 py-1"
+              onClick={() => acquireRealLocation(true)}
+            >
+              <i className="bi bi-geo-alt me-1" /> Get Real Location
+            </button>
+          )}
 
           {trip?.status === "IN_PROGRESS" && (
             <span className={`badge px-3 py-2 rounded-pill fw-bold border ${isTransmittingGps ? "bg-success text-white" : "bg-warning text-dark border-warning"}`}>

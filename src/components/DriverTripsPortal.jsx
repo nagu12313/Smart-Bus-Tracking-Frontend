@@ -10,6 +10,20 @@ export default function DriverTripsPortal({ user }) {
   const [error, setError] = useState("");
   const [geoState, setGeoState] = useState("unknown"); // "granted", "denied", "prompt", "unsupported"
 
+  const verifyGpsPermission = () => {
+    if (!("geolocation" in navigator)) {
+      setGeoState("unsupported");
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      () => setGeoState("granted"),
+      (err) => {
+        if (err.code === 1) setGeoState("denied");
+      },
+      { enableHighAccuracy: true, timeout: 8000 }
+    );
+  };
+
   useEffect(() => {
     if (!("geolocation" in navigator)) {
       setGeoState("unsupported");
@@ -18,9 +32,13 @@ export default function DriverTripsPortal({ user }) {
     if (navigator.permissions && navigator.permissions.query) {
       navigator.permissions.query({ name: "geolocation" }).then((res) => {
         setGeoState(res.state);
-        res.onchange = () => setGeoState(res.state);
-      }).catch(() => setGeoState("prompt"));
+        res.onchange = () => {
+          setGeoState(res.state);
+          if (res.state === "granted") verifyGpsPermission();
+        };
+      }).catch(() => {});
     }
+    verifyGpsPermission();
   }, []);
 
   const loadTrips = async () => {
@@ -82,8 +100,8 @@ export default function DriverTripsPortal({ user }) {
                 border: `1px solid ${geoState === "granted" ? "rgba(16, 185, 129, 0.4)" : geoState === "denied" ? "rgba(239, 68, 68, 0.4)" : "rgba(245, 158, 11, 0.4)"}`,
                 fontSize: "11px", fontWeight: "700"
               }}>
-                <i className={`bi ${geoState === "granted" ? "bi-broadcast spin-animation" : geoState === "denied" ? "bi-shield-slash" : "bi-geo-alt"} me-1`} />
-                {geoState === "granted" ? "CHROME GPS READY" : geoState === "denied" ? "GPS ACCESS BLOCKED" : "GPS PERMISSION PENDING"}
+                <i className={`bi ${geoState === "granted" ? "bi-broadcast spin-animation" : geoState === "denied" ? "bi-shield-slash" : "bi-arrow-repeat spin-animation"} me-1`} />
+                {geoState === "granted" ? "CHROME GPS READY" : geoState === "denied" ? "GPS ACCESS BLOCKED" : "VERIFYING GPS..."}
               </span>
             </div>
             <h1 className="transit-hero-title">Driver Transit Workspace</h1>

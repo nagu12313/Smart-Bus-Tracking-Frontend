@@ -1608,7 +1608,7 @@ function Dashboard() {
   const adminMapBuses = buses
     .map((b) => {
       const live = liveLocationsMap[b.id];
-      const isFresh = live && !live.isStale && live.gpsTime && (Date.now() - new Date(live.gpsTime).getTime()) < 180000;
+      const isFresh = live && !live.isStale && live.gpsTime && (Date.now() - new Date(live.gpsTime).getTime()) < 120000;
       return {
         ...b,
         busId: b.id,
@@ -1617,10 +1617,10 @@ function Dashboard() {
         driverName: b.driverName || "Assigned Driver",
         driverPhone: b.driverPhone || "",
         status: isFresh ? (live.status || b.status) : (b.status || "PARKED"),
-        latitude: live?.latitude ?? b.latitude ?? 17.4475,
-        longitude: live?.longitude ?? b.longitude ?? 78.3762,
-        rawLatitude: live?.rawLatitude ?? live?.latitude ?? b.latitude,
-        rawLongitude: live?.rawLongitude ?? live?.longitude ?? b.longitude,
+        latitude: live?.latitude ?? b.latitude ?? null,
+        longitude: live?.longitude ?? b.longitude ?? null,
+        rawLatitude: live?.rawLatitude ?? live?.latitude ?? b.latitude ?? null,
+        rawLongitude: live?.rawLongitude ?? live?.longitude ?? b.longitude ?? null,
         snappedLatitude: live?.snappedLatitude,
         snappedLongitude: live?.snappedLongitude,
         isRoadMatched: live?.isRoadMatched,
@@ -2740,12 +2740,12 @@ function Tracking() {
     return visibleBuses
       .map((b) => {
         const live = visibleLiveLocations.find((l) => String(l.busId) === String(b.id));
-        // Fresh = live data exists, not stale, GPS < 3 minutes old
+        // Fresh = live data exists, not stale, GPS < 2 minutes old
         const isFresh =
           live &&
           !live.isStale &&
           live.gpsTime &&
-          Date.now() - new Date(live.gpsTime).getTime() < 180000;
+          Date.now() - new Date(live.gpsTime).getTime() < 120000;
 
         return {
           ...b,
@@ -2755,10 +2755,10 @@ function Tracking() {
           driverName: b.driverName || "Assigned Driver",
           driverPhone: b.driverPhone || "",
           status: isFresh ? (live.status || b.status) : (b.status || "PARKED"),
-          latitude: live?.latitude ?? b.latitude ?? 16.3235,
-          longitude: live?.longitude ?? b.longitude ?? 80.4578,
-          rawLatitude: live?.rawLatitude ?? live?.latitude ?? b.latitude,
-          rawLongitude: live?.rawLongitude ?? live?.longitude ?? b.longitude,
+          latitude: live?.latitude ?? b.latitude ?? null,
+          longitude: live?.longitude ?? b.longitude ?? null,
+          rawLatitude: live?.rawLatitude ?? live?.latitude ?? b.latitude ?? null,
+          rawLongitude: live?.rawLongitude ?? live?.longitude ?? b.longitude ?? null,
           snappedLatitude: live?.snappedLatitude,
           snappedLongitude: live?.snappedLongitude,
           isRoadMatched: live?.isRoadMatched,
@@ -2795,10 +2795,10 @@ function Tracking() {
   const isSelectedFresh = liveForSelected &&
     !liveForSelected.isStale &&
     liveForSelected.gpsTime &&
-    (Date.now() - new Date(liveForSelected.gpsTime).getTime()) < 180000;
+    (Date.now() - new Date(liveForSelected.gpsTime).getTime()) < 120000;
   const curSpeed = isSelectedFresh ? Math.round(Number(liveForSelected.speed || 0)) : 0;
-  const curLat = liveForSelected?.latitude ?? selectedBus?.latitude ?? 16.3067;
-  const curLng = liveForSelected?.longitude ?? selectedBus?.longitude ?? 80.4365;
+  const curLat = liveForSelected?.latitude ?? selectedBus?.latitude ?? null;
+  const curLng = liveForSelected?.longitude ?? selectedBus?.longitude ?? null;
   const curStatus = isSelectedFresh ? (liveForSelected?.status || "ON_ROUTE") : "STOPPED";
   const estDistance = selectedRoute?.distance ? `${selectedRoute.distance} km` : "4.8 km";
   const estEta = isSelectedFresh && curSpeed >= 5
@@ -2829,22 +2829,24 @@ function Tracking() {
       const live = visibleLiveLocations.find((l) => String(l.busId) === String(b.id));
       const bRoute = routes.find((r) => String(r.id) === String(b.routeId));
 
-      // Check if telemetry is fresh (< 3 minutes old and not marked stale)
-      const isFresh = live && !live.isStale && live.gpsTime && (Date.now() - new Date(live.gpsTime).getTime()) < 180000;
+      // Check if telemetry is fresh (< 2 minutes old and not marked stale)
+      const isFresh = live && !live.isStale && live.gpsTime && (Date.now() - new Date(live.gpsTime).getTime()) < 120000;
 
       // Real-time speed from driver GPS telemetry (km/h) - strictly 0 when parked/stale
       const curSpeed = isFresh ? Math.round(Number(live.speed || 0)) : 0;
       const isActive = isFresh && (curSpeed > 0 || live?.status === "ON_ROUTE");
 
       // Real live GPS coordinates of the bus right now
-      const busLat = Number(live?.latitude ?? b.latitude ?? 16.3235);
-      const busLng = Number(live?.longitude ?? b.longitude ?? 80.4578);
+      const rawBusLat = live?.latitude ?? b.latitude ?? null;
+      const rawBusLng = live?.longitude ?? b.longitude ?? null;
+      const busLat = rawBusLat != null ? Number(rawBusLat) : null;
+      const busLng = rawBusLng != null ? Number(rawBusLng) : null;
 
       // Resolve destination GPS coordinates from route stops or campus endpoint
-      let destLat = 16.34;
-      let destLng = 80.47;
-      let startLat = 16.3067;
-      let startLng = 80.4365;
+      let destLat = null;
+      let destLng = null;
+      let startLat = null;
+      let startLng = null;
 
       if (bRoute?.stops && bRoute.stops.length > 0) {
         const lastStop = bRoute.stops[bRoute.stops.length - 1];
@@ -2860,9 +2862,9 @@ function Tracking() {
       }
 
       // Dynamic distances based on live GPS tracking location:
-      const fromStartKm = getDistanceKm(busLat, busLng, startLat, startLng);
-      const remainingDistanceKm = getDistanceKm(busLat, busLng, destLat, destLng);
-      const totalSpanKm = fromStartKm + remainingDistanceKm;
+      const fromStartKm = (busLat != null && startLat != null) ? getDistanceKm(busLat, busLng, startLat, startLng) : 0;
+      const remainingDistanceKm = (busLat != null && destLat != null) ? getDistanceKm(busLat, busLng, destLat, destLng) : (bRoute?.distance ? Number(bRoute.distance) : 5.0);
+      const totalSpanKm = (fromStartKm > 0 || remainingDistanceKm > 0) ? (fromStartKm + remainingDistanceKm) : (bRoute?.distance ? Number(bRoute.distance) : 10.0);
 
       // Dynamic progress based on live bus position:
       // Clamped between 0.08 (origin) and 0.92 (destination)

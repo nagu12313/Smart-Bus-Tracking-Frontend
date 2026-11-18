@@ -8,6 +8,20 @@ export default function DriverTripsPortal({ user }) {
   const [loading, setLoading] = useState(true);
   const [selectedTripId, setSelectedTripId] = useState(null);
   const [error, setError] = useState("");
+  const [geoState, setGeoState] = useState("unknown"); // "granted", "denied", "prompt", "unsupported"
+
+  useEffect(() => {
+    if (!("geolocation" in navigator)) {
+      setGeoState("unsupported");
+      return;
+    }
+    if (navigator.permissions && navigator.permissions.query) {
+      navigator.permissions.query({ name: "geolocation" }).then((res) => {
+        setGeoState(res.state);
+        res.onchange = () => setGeoState(res.state);
+      }).catch(() => setGeoState("prompt"));
+    }
+  }, []);
 
   const loadTrips = async () => {
     try {
@@ -62,8 +76,14 @@ export default function DriverTripsPortal({ user }) {
               <span className="badge px-3 py-1 rounded-pill" style={{ background: "rgba(245, 158, 11, 0.2)", color: "#fbbf24", border: "1px solid rgba(245, 158, 11, 0.4)", fontSize: "11px", fontWeight: "700" }}>
                 <i className="bi bi-person-badge-fill me-1" /> DRIVER COCKPIT
               </span>
-              <span className="badge px-3 py-1 rounded-pill" style={{ background: "rgba(16, 185, 129, 0.2)", color: "#34d399", border: "1px solid rgba(16, 185, 129, 0.4)", fontSize: "11px", fontWeight: "700" }}>
-                <i className="bi bi-broadcast me-1 spin-animation" /> GPS TRANSMITTER READY
+              <span className="badge px-3 py-1 rounded-pill" style={{
+                background: geoState === "granted" ? "rgba(16, 185, 129, 0.2)" : geoState === "denied" ? "rgba(239, 68, 68, 0.2)" : "rgba(245, 158, 11, 0.2)",
+                color: geoState === "granted" ? "#34d399" : geoState === "denied" ? "#f87171" : "#fbbf24",
+                border: `1px solid ${geoState === "granted" ? "rgba(16, 185, 129, 0.4)" : geoState === "denied" ? "rgba(239, 68, 68, 0.4)" : "rgba(245, 158, 11, 0.4)"}`,
+                fontSize: "11px", fontWeight: "700"
+              }}>
+                <i className={`bi ${geoState === "granted" ? "bi-broadcast spin-animation" : geoState === "denied" ? "bi-shield-slash" : "bi-geo-alt"} me-1`} />
+                {geoState === "granted" ? "CHROME GPS READY" : geoState === "denied" ? "GPS ACCESS BLOCKED" : "GPS PERMISSION PENDING"}
               </span>
             </div>
             <h1 className="transit-hero-title">Driver Transit Workspace</h1>
@@ -87,6 +107,29 @@ export default function DriverTripsPortal({ user }) {
           </div>
         </div>
       </div>
+
+      {geoState === "denied" && (
+        <div className="alert alert-danger py-2 px-3 mb-4 rounded-3 d-flex align-items-center justify-content-between flex-wrap gap-2">
+          <div>
+            <i className="bi bi-shield-slash-fill me-2" />
+            <b>Location permission is blocked in Chrome settings.</b> Trips cannot broadcast bus location until enabled in Chrome site settings.
+          </div>
+          <button
+            type="button"
+            className="btn btn-sm btn-outline-danger fw-bold rounded-pill"
+            onClick={() => {
+              if ("geolocation" in navigator) {
+                navigator.geolocation.getCurrentPosition(
+                  () => setGeoState("granted"),
+                  () => window.location.reload()
+                );
+              }
+            }}
+          >
+            Allow Location Access
+          </button>
+        </div>
+      )}
 
       {error && (
         <div className="alert alert-danger py-2 px-3 mb-4 rounded-3">

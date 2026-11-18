@@ -477,8 +477,11 @@ export default function LiveMap({
     if (activeBuses[0]?.latitude && activeBuses[0]?.longitude) {
       return [activeBuses[0].latitude, activeBuses[0].longitude];
     }
+    if (routeStops && routeStops.length > 0 && routeStops[0]?.latitude && routeStops[0]?.longitude) {
+      return [routeStops[0].latitude, routeStops[0].longitude];
+    }
     return defaultCenter;
-  }, [selectedBus, activeBuses]);
+  }, [selectedBus, activeBuses, routeStops]);
 
   // Fetch road geometry for the selected bus's route
   useEffect(() => {

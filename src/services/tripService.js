@@ -18,6 +18,11 @@ export const tripService = {
   endTrip: (tripId) =>
     api.put(`/api/trips/${tripId}/end`).then(r => r.data.data),
 
+  /** Driver submits current GPS location for active trip */
+  updateTripLocation: (tripId, locationData, config = {}) =>
+    api.post(`/api/trips/${tripId}/location`, locationData, { skipLoading: true, ...config })
+      .then(r => r.data.data),
+
   /** Get trips assigned to the currently logged in driver */
   getMyTrips: (config = {}) =>
     api.get('/api/trips/my-trips', config).then(r => r.data.data),

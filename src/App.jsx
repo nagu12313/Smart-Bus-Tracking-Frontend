@@ -3605,22 +3605,77 @@ function Buses() {
 // ============================================================
 function Drivers() {
   const { drivers, setDrivers, buses, refreshData } = useStore();
+
+  const busOptions = [
+    { label: "None (Unassigned)", value: "" },
+    ...(buses || []).map((b) => ({ label: `${b.busNumber} (${b.busName || "Fleet"})`, value: b.id })),
+  ];
+
+  // Decorate drivers with currently assigned busId and busNumber so it shows in the table and form
+  const driversWithBus = useMemo(() => {
+    return (drivers || []).map((d) => {
+      const assigned = (buses || []).find((b) => b.driverId === d.id || b.driver?.id === d.id);
+      return {
+        ...d,
+        assignedBusId: assigned ? assigned.id : "",
+      };
+    });
+  }, [drivers, buses]);
+
   const fields = [
     { key: "name", label: "Driver name" },
     { key: "email", label: "Email address" },
     { key: "phone", label: "Phone number" },
     { key: "licenseNumber", label: "License number" },
+    { key: "assignedBusId", label: "Assigned Bus", options: busOptions, required: false },
     { key: "status", label: "Status", options: ["ACTIVE", "INACTIVE"] },
   ];
 
   const handleSave = async (data, editing) => {
+    let savedDriver = null;
     if (editing) {
-      const updated = await driverService.update(editing.id, data);
-      setDrivers((prev) => prev.map((d) => (d.id === editing.id ? (updated || { ...d, ...data }) : d)));
+      savedDriver = await driverService.update(editing.id, data);
+      setDrivers((prev) => prev.map((d) => (d.id === editing.id ? (savedDriver || { ...d, ...data }) : d)));
     } else {
-      const created = await driverService.create(data);
-      setDrivers((prev) => [created || { ...data, id: Date.now() }, ...prev]);
+      savedDriver = await driverService.create(data);
+      setDrivers((prev) => [savedDriver || { ...data, id: Date.now() }, ...prev]);
     }
+
+    const driverId = editing ? editing.id : savedDriver?.id;
+    if (driverId) {
+      const targetBusId = data.assignedBusId ? Number(data.assignedBusId) : null;
+      for (const bus of (buses || [])) {
+        const isCurrentlyAssigned = bus.driverId === driverId || bus.driver?.id === driverId;
+        if (targetBusId && bus.id === targetBusId && !isCurrentlyAssigned) {
+          try {
+            await busService.update(bus.id, {
+              busNumber: bus.busNumber || bus.number,
+              busName: bus.busName || bus.name,
+              capacity: Number(bus.capacity) || 50,
+              status: bus.status || "OFFLINE",
+              driverId: driverId,
+              routeId: bus.routeId || bus.route?.id || null,
+            });
+          } catch (err) {
+            console.warn("Failed to assign bus to driver:", err);
+          }
+        } else if (isCurrentlyAssigned && (!targetBusId || bus.id !== targetBusId)) {
+          try {
+            await busService.update(bus.id, {
+              busNumber: bus.busNumber || bus.number,
+              busName: bus.busName || bus.name,
+              capacity: Number(bus.capacity) || 50,
+              status: bus.status || "OFFLINE",
+              driverId: null,
+              routeId: bus.routeId || bus.route?.id || null,
+            });
+          } catch (err) {
+            console.warn("Failed to unassign bus from driver:", err);
+          }
+        }
+      }
+    }
+
     await refreshData(true);
   };
 
@@ -3710,7 +3765,7 @@ function Drivers() {
   return (
     <CrudPage
       type="Drivers"
-      items={drivers}
+      items={driversWithBus}
       onSave={handleSave}
       onDelete={handleDelete}
       onDeleteAll={handleDeleteAll}

@@ -1278,19 +1278,12 @@ function ProtectedLayout() {
       </aside>
       <main className="main-area">
         <header className="topbar">
-          <div className="topbar-left">
-            <button className="mobile-menu" onClick={() => setOpen(!open)} aria-label="Toggle navigation menu">
-              <i className="bi bi-list" />
-            </button>
-            <Link to="/dashboard" className="topbar-brand-link" title="EduTrack Dashboard">
-              <img src="/edutrack-icon.svg" alt="EduTrack Logo" className="topbar-logo-img" />
-              <span className="topbar-brand-text">EduTrack</span>
-            </Link>
-            <div className="topbar-divider" />
-            <div className="topbar-title-block">
-              <span className="top-kicker">CAMPUS TRANSPORT PORTAL</span>
-              <b>{navItems.find((n) => location.pathname.includes(n[0]))?.[1] || "Dashboard"}</b>
-            </div>
+          <button className="mobile-menu" onClick={() => setOpen(!open)} aria-label="Toggle navigation menu">
+            <i className="bi bi-list" />
+          </button>
+          <div>
+            <span className="top-kicker">CAMPUS TRANSPORT PORTAL</span>
+            <b>{navItems.find((n) => location.pathname.includes(n[0]))?.[1] || "Dashboard"}</b>
           </div>
           <div className="top-actions" ref={dropdownRef}>
             <button

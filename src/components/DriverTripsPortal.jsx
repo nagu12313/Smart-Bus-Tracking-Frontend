@@ -116,12 +116,25 @@ export default function DriverTripsPortal({ user }) {
             </span>
             <button
               type="button"
-              className="btn btn-warning rounded-pill px-4 fw-bold shadow-sm"
+              className="btn btn-warning rounded-pill px-3 fw-bold shadow-sm"
               style={{ background: "linear-gradient(135deg, #f59e0b, #d97706)", border: "none", color: "#0f172a" }}
               onClick={loadTrips}
             >
-              <i className="bi bi-arrow-clockwise me-1" /> Refresh Trips
+              <i className="bi bi-arrow-clockwise me-1" /> Refresh
             </button>
+            {trips.length > 0 && (
+              <button
+                type="button"
+                className="btn btn-success rounded-pill px-4 fw-bold shadow-sm"
+                style={{ background: "linear-gradient(135deg, #10b981, #059669)", border: "none", color: "#fff" }}
+                onClick={() => {
+                  const targetTrip = trips.find((t) => t.status === "IN_PROGRESS") || trips.find((t) => t.status === "SCHEDULED") || trips[0];
+                  if (targetTrip) setSelectedTripId(targetTrip.id);
+                }}
+              >
+                <i className="bi bi-play-circle-fill me-1" /> Start Trip (GPS)
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -231,9 +244,13 @@ export default function DriverTripsPortal({ user }) {
                     {/* Details Lines */}
                     <div className="py-2 border-top border-bottom mb-3" style={{ fontSize: "13px" }}>
                       <div className="d-flex justify-content-between py-1">
-                        <span className="text-muted">Scheduled Departure:</span>
+                        <span className="text-muted">{isInProgress ? "Started At:" : isCompleted ? "Completed At:" : "Scheduled Departure:"}</span>
                         <b className="text-dark">
-                          {trip.startTime
+                          {isInProgress && trip.startTime
+                            ? new Date(trip.startTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+                            : isCompleted && (trip.endTime || trip.startTime)
+                            ? new Date(trip.endTime || trip.startTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                            : trip.startTime
                             ? new Date(trip.startTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
                             : "07:30 AM"}
                         </b>
@@ -257,14 +274,16 @@ export default function DriverTripsPortal({ user }) {
                   <button
                     type="button"
                     className={`btn btn-lg w-100 rounded-pill fw-bold btn-driver-big-action ${
-                      isInProgress ? "btn-success" : "btn-warning text-dark"
+                      isInProgress ? "btn-success" : isCompleted ? "btn-warning text-dark" : "btn-primary text-white"
                     }`}
                     style={{
                       background: isInProgress
                         ? "linear-gradient(135deg, #10b981, #059669)"
-                        : "linear-gradient(135deg, #f59e0b, #d97706)",
+                        : isCompleted
+                        ? "linear-gradient(135deg, #f59e0b, #d97706)"
+                        : "linear-gradient(135deg, #2563eb, #1d4ed8)",
                       border: "none",
-                      color: isInProgress ? "#fff" : "#0f172a",
+                      color: isInProgress || !isCompleted ? "#fff" : "#0f172a",
                     }}
                     onClick={() => setSelectedTripId(trip.id)}
                   >
@@ -272,9 +291,13 @@ export default function DriverTripsPortal({ user }) {
                       <>
                         <i className="bi bi-broadcast me-2" /> Continue Live GPS Tracking <i className="bi bi-arrow-right ms-2" />
                       </>
+                    ) : isCompleted ? (
+                      <>
+                        <i className="bi bi-arrow-repeat me-2" /> Start New Run / Restart (GPS) <i className="bi bi-arrow-right ms-2" />
+                      </>
                     ) : (
                       <>
-                        <i className="bi bi-play-circle-fill me-2" /> Start Trip &amp; Broadcast GPS <i className="bi bi-arrow-right ms-2" />
+                        <i className="bi bi-play-circle-fill me-2" /> Start Trip (Real-time GPS) <i className="bi bi-arrow-right ms-2" />
                       </>
                     )}
                   </button>

@@ -124,9 +124,52 @@ export default function DriverTripLiveTracking({ tripId, onBack, onTripUpdated }
   const [route, setRoute] = useState(null);
   const [roadPolyline, setRoadPolyline] = useState([]);
   const [routeDistanceKm, setRouteDistanceKm] = useState(0);
+  const [travelledTrail, setTravelledTrail] = useState([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [lockFocus, setLockFocus] = useState(true);
+
+  // Exact real-time departure confirmation modal & stopwatch states
+  const [showStartConfirmModal, setShowStartConfirmModal] = useState(false);
+  const [clockTimeStr, setClockTimeStr] = useState(() =>
+    new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+  );
+  const [startSuccessMsg, setStartSuccessMsg] = useState("");
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  // Live ticking clock for start modal and UI
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setClockTimeStr(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Live elapsed driving stopwatch
+  useEffect(() => {
+    if (trip?.status !== "IN_PROGRESS" || !trip?.startTime) {
+      setElapsedSeconds(0);
+      return;
+    }
+    const calc = () => {
+      const s = new Date(trip.startTime).getTime();
+      const n = Date.now();
+      setElapsedSeconds(Math.max(0, Math.floor((n - s) / 1000)));
+    };
+    calc();
+    const iv = setInterval(calc, 1000);
+    return () => clearInterval(iv);
+  }, [trip?.status, trip?.startTime]);
+
+  const formatElapsed = (sec) => {
+    const hrs = Math.floor(sec / 3600);
+    const mins = Math.floor((sec % 3600) / 60);
+    const s = sec % 60;
+    if (hrs > 0) {
+      return `${String(hrs).padStart(2, "0")}:${String(mins).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    }
+    return `${String(mins).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  };
 
   // Live Telemetry state (Authoritative source: Driver Phone GPS = Bus GPS)
   const [liveLocation, setLiveLocation] = useState({
@@ -191,6 +234,14 @@ export default function DriverTripLiveTracking({ tripId, onBack, onTripUpdated }
           provider: "chrome-gps",
           pingsCount: prev.pingsCount + 1,
         }));
+
+        setTravelledTrail((prev) => {
+          const last = prev[prev.length - 1];
+          if (last && Math.abs(last[0] - latitude) < 0.00005 && Math.abs(last[1] - longitude) < 0.00005) {
+            return prev;
+          }
+          return [...prev, [latitude, longitude]];
+        });
 
         if (trip?.status === "IN_PROGRESS" || forceSend) {
           const payload = {
@@ -446,9 +497,27 @@ export default function DriverTripLiveTracking({ tripId, onBack, onTripUpdated }
                 pingsCount: prev.pingsCount + 1,
               }));
               lastGpsTimeRef.current = new Date(latest.gpsTime || 0).getTime();
+              if (latest.latitude && latest.longitude) {
+                setTravelledTrail((prev) => (prev.length === 0 ? [[latest.latitude, latest.longitude]] : prev));
+              }
             }
           } catch {
             // standby
+          }
+
+          // Fetch historical trail for this bus
+          try {
+            const history = await trackingService.getHistory(tripData.busId, 40, { skipLoading: true });
+            if (isMounted && Array.isArray(history) && history.length > 0) {
+              const points = history
+                .filter((p) => p.latitude != null && p.longitude != null)
+                .map((p) => [p.latitude, p.longitude]);
+              if (points.length > 0) {
+                setTravelledTrail(points);
+              }
+            }
+          } catch {
+            // history optional
           }
         }
       } catch (err) {
@@ -489,6 +558,14 @@ export default function DriverTripLiveTracking({ tripId, onBack, onTripUpdated }
       provider: incoming.provider || prev.provider,
       pingsCount: prev.pingsCount + 1,
     }));
+
+    setTravelledTrail((prev) => {
+      const last = prev[prev.length - 1];
+      if (last && Math.abs(last[0] - incoming.latitude) < 0.00005 && Math.abs(last[1] - incoming.longitude) < 0.00005) {
+        return prev;
+      }
+      return [...prev, [incoming.latitude, incoming.longitude]];
+    });
   }, []);
 
   // WebSocket Subscription for Real-time GPS Telemetry
@@ -526,16 +603,17 @@ export default function DriverTripLiveTracking({ tripId, onBack, onTripUpdated }
   const destinationStop = orderedStops.length > 0 ? orderedStops[orderedStops.length - 1] : null;
 
   // Next Stop & Remaining Distance calculations
-  const { nextStop, distanceToNextMeters, remainingDistanceKm, routeProgressPct } = useMemo(() => {
+  const { nextStop, distanceToNextMeters, remainingDistanceKm, routeProgressPct, completedStopsCount } = useMemo(() => {
     const curLat = liveLocation.latitude;
     const curLng = liveLocation.longitude;
 
     if (!orderedStops || orderedStops.length === 0) {
-      return { nextStop: null, distanceToNextMeters: 0, remainingDistanceKm: 0, routeProgressPct: 0 };
+      return { nextStop: null, distanceToNextMeters: 0, remainingDistanceKm: 0, routeProgressPct: 0, completedStopsCount: 0 };
     }
 
     // Find next unreached stop ahead
     let upcoming = null;
+    let upcomingIdx = -1;
     let minUpcomingDist = Infinity;
 
     for (let i = 0; i < orderedStops.length; i++) {
@@ -546,11 +624,13 @@ export default function DriverTripLiveTracking({ tripId, onBack, onTripUpdated }
       if (dist > 40 && dist < minUpcomingDist) {
         minUpcomingDist = dist;
         upcoming = s;
+        upcomingIdx = i;
       }
     }
 
     if (!upcoming) {
       upcoming = destinationStop;
+      upcomingIdx = orderedStops.length - 1;
       minUpcomingDist = destinationStop ? calculateDistanceKm(curLat, curLng, destinationStop.latitude, destinationStop.longitude) * 1000 : 0;
     }
 
@@ -565,11 +645,14 @@ export default function DriverTripLiveTracking({ tripId, onBack, onTripUpdated }
     const coveredKm = Math.max(0, totalKm - distToDestKm);
     const progress = Math.min(100, Math.max(5, Math.round((coveredKm / totalKm) * 100)));
 
+    const completed = upcomingIdx > 0 ? upcomingIdx : (progress >= 95 ? orderedStops.length : 0);
+
     return {
       nextStop: upcoming,
       distanceToNextMeters: Math.round(minUpcomingDist),
       remainingDistanceKm: distToDestKm,
       routeProgressPct: progress,
+      completedStopsCount: completed,
     };
   }, [orderedStops, destinationStop, liveLocation.latitude, liveLocation.longitude, routeDistanceKm]);
 
@@ -600,8 +683,8 @@ export default function DriverTripLiveTracking({ tripId, onBack, onTripUpdated }
     return [16.3067, 80.4365];
   }, [liveLocation.latitude, liveLocation.longitude, orderedStops]);
 
-  // Trip Status Actions
-  const handleStartTrip = async () => {
+  // Trip Status Actions — Real-Time GPS Departure Flow
+  const handleStartTripClick = () => {
     if (!trip) return;
 
     if (geoPermission === "denied") {
@@ -613,28 +696,26 @@ export default function DriverTripLiveTracking({ tripId, onBack, onTripUpdated }
       return;
     }
 
-    if (geoPermission === "prompt" && "geolocation" in navigator) {
-      try {
-        await new Promise((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(resolve, reject, {
-            enableHighAccuracy: true,
-            timeout: 10000,
-          });
-        });
-        setGeoPermission("granted");
-      } catch (err) {
-        if (err.code === 1) {
-          setGeoPermission("denied");
-          alert("Location permission is required to broadcast the bus location to parents and admins.");
-          return;
-        }
-      }
-    }
+    // Give driver the exact real-time departure preview before starting
+    setShowStartConfirmModal(true);
+  };
+
+  const confirmAndStartTrip = async () => {
+    if (!trip) return;
 
     setActionLoading(true);
     try {
       const updated = await tripService.startScheduledTrip(trip.id);
       setTrip(updated);
+      setShowStartConfirmModal(false);
+
+      const exactStart = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      setStartSuccessMsg(`✓ Trip started successfully at ${exactStart}! Real-time phone GPS telemetry is now broadcasting live.`);
+      setTimeout(() => setStartSuccessMsg(""), 9000);
+
+      // Force immediate high-accuracy GPS fix & broadcast
+      acquireRealLocation(true);
+
       if (onTripUpdated) onTripUpdated();
     } catch (err) {
       alert(err.response?.data?.message || "Failed to start trip.");
@@ -704,9 +785,26 @@ export default function DriverTripLiveTracking({ tripId, onBack, onTripUpdated }
                 {trip?.status === "IN_PROGRESS" ? "🔴 IN PROGRESS" : trip?.status}
               </span>
             </div>
-            <small className="text-muted">
-              Assigned Bus: <b className="text-dark">{trip?.busNumber}</b> ({trip?.busName}) · {trip?.tripType || "MORNING"} RUN
-            </small>
+            <div className="d-flex align-items-center gap-2 flex-wrap mt-1">
+              <small className="text-muted">
+                Assigned Bus: <b className="text-dark">{trip?.busNumber}</b> ({trip?.busName}) · {trip?.tripType || "MORNING"} RUN
+              </small>
+              {trip?.status === "IN_PROGRESS" && trip?.startTime && (
+                <span className="badge bg-light text-dark border px-2 py-1" style={{ fontSize: "12px" }}>
+                  <i className="bi bi-clock-history text-primary me-1" />
+                  Departure: <b>{new Date(trip.startTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</b>
+                  <span className="mx-1 text-muted">·</span>
+                  <i className="bi bi-stopwatch text-success me-1" />
+                  Driving: <b className="text-success">{formatElapsed(elapsedSeconds)}</b>
+                </span>
+              )}
+              {trip?.status === "COMPLETED" && (
+                <span className="badge bg-secondary-subtle text-secondary border px-2 py-1" style={{ fontSize: "12px" }}>
+                  <i className="bi bi-check-circle me-1" />
+                  Completed: <b>{trip.endTime ? new Date(trip.endTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Finished"}</b>
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
@@ -735,14 +833,27 @@ export default function DriverTripLiveTracking({ tripId, onBack, onTripUpdated }
             </span>
           )}
 
-          {trip?.status === "SCHEDULED" && (
+          {(trip?.status === "SCHEDULED" || trip?.status === "COMPLETED") && (
             <button
               type="button"
-              className="btn btn-primary rounded-pill px-4 fw-bold shadow-sm"
-              onClick={handleStartTrip}
+              className={`btn ${trip?.status === "COMPLETED" ? "btn-warning text-dark" : "btn-primary"} rounded-pill px-4 fw-bold shadow-sm`}
+              onClick={handleStartTripClick}
               disabled={actionLoading}
             >
-              {actionLoading ? "Starting..." : <>Start This Trip <i className="bi bi-play-fill ms-1" /></>}
+              {actionLoading ? (
+                <>
+                  <span className="spinner-border spinner-border-sm me-2" />
+                  Starting...
+                </>
+              ) : trip?.status === "COMPLETED" ? (
+                <>
+                  <i className="bi bi-arrow-repeat me-1" /> Start New Run (GPS)
+                </>
+              ) : (
+                <>
+                  <i className="bi bi-play-circle-fill me-1" /> Start This Trip (GPS)
+                </>
+              )}
             </button>
           )}
 
@@ -767,6 +878,119 @@ export default function DriverTripLiveTracking({ tripId, onBack, onTripUpdated }
           </button>
         </div>
       </div>
+
+      {/* Real-time Trip Start Success Banner */}
+      {startSuccessMsg && (
+        <div className="alert alert-success py-2 px-3 mb-3 rounded-3 d-flex align-items-center gap-2 shadow-sm" style={{ borderLeft: "4px solid #10b981", background: "#ecfdf5" }}>
+          <i className="bi bi-check-circle-fill text-success fs-5" />
+          <span className="fw-semibold text-dark">{startSuccessMsg}</span>
+        </div>
+      )}
+
+      {/* Confirmation Modal: Start Trip with Real-Time Exact Clock */}
+      {showStartConfirmModal && (
+        <div
+          className="modal-backdrop-custom"
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: "rgba(15, 23, 42, 0.65)",
+            backdropFilter: "blur(4px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 9999,
+            padding: "16px",
+          }}
+          onClick={() => !actionLoading && setShowStartConfirmModal(false)}
+        >
+          <div
+            className="modal-card bg-white shadow-lg"
+            style={{
+              maxWidth: "480px",
+              width: "100%",
+              borderRadius: "20px",
+              padding: "32px 28px",
+              position: "relative",
+              border: "1px solid #e2e8f0",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="text-center mb-3">
+              <div
+                className="d-inline-flex align-items-center justify-content-center rounded-circle mb-2"
+                style={{ width: "64px", height: "64px", background: "rgba(16, 185, 129, 0.15)", color: "#10b981", fontSize: "32px" }}
+              >
+                <i className="bi bi-play-circle-fill" />
+              </div>
+              <h4 className="fw-bold mb-1 text-dark">Confirm Trip Departure</h4>
+              <p className="text-muted small mb-0">
+                Live GPS telemetry will begin broadcasting immediately to parents, students, and supervisors.
+              </p>
+            </div>
+
+            <div className="p-3 bg-light rounded-3 border mb-4">
+              <div className="d-flex justify-content-between align-items-center py-2 border-bottom">
+                <span className="text-muted small fw-semibold">Departure Time:</span>
+                <span className="badge px-3 py-1 rounded-pill" style={{ background: "#dcfce7", color: "#15803d", fontSize: "15px", fontFamily: "monospace", fontWeight: "700" }}>
+                  <i className="bi bi-clock-fill me-1" /> {clockTimeStr}
+                </span>
+              </div>
+              <div className="d-flex justify-content-between align-items-center py-2 border-bottom">
+                <span className="text-muted small">Departure Date:</span>
+                <b className="text-dark small">
+                  {new Date().toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short", year: "numeric" })}
+                </b>
+              </div>
+              <div className="d-flex justify-content-between align-items-center py-2 border-bottom">
+                <span className="text-muted small">Assigned Bus:</span>
+                <b className="text-dark small">{trip?.busNumber} ({trip?.busName || "Campus Fleet"})</b>
+              </div>
+              <div className="d-flex justify-content-between align-items-center py-2 border-bottom">
+                <span className="text-muted small">Route:</span>
+                <b className="text-dark small text-truncate" style={{ maxWidth: "200px" }}>{trip?.routeName || "Campus Route"}</b>
+              </div>
+              <div className="d-flex justify-content-between align-items-center py-2">
+                <span className="text-muted small">Phone GPS Status:</span>
+                <span className={`badge ${geoPermission === "granted" ? "bg-success" : "bg-warning text-dark"} px-2 py-1`}>
+                  {geoPermission === "granted" ? "✓ High-Accuracy GPS Fix" : "Prompt for GPS on Start"}
+                </span>
+              </div>
+            </div>
+
+            <div className="d-flex gap-2">
+              <button
+                type="button"
+                className="btn btn-outline-secondary w-50 rounded-pill fw-bold"
+                onClick={() => setShowStartConfirmModal(false)}
+                disabled={actionLoading}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-success w-50 rounded-pill fw-bold shadow-sm"
+                onClick={confirmAndStartTrip}
+                disabled={actionLoading}
+              >
+                {actionLoading ? (
+                  <>
+                    <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true" />
+                    Starting...
+                  </>
+                ) : (
+                  <>
+                    Start Trip Now <i className="bi bi-arrow-right ms-1" />
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Chrome Geolocation Permission Warning & Detailed Step-by-Step Instructions */}
       {geoPermission === "denied" && (
@@ -860,7 +1084,7 @@ export default function DriverTripLiveTracking({ tripId, onBack, onTripUpdated }
             <span className="text-muted small fw-bold d-block text-uppercase">ROUTE PROGRESS</span>
             <div className="d-flex justify-content-between align-items-center mt-1">
               <span className="fs-5 fw-bold text-success">{routeProgressPct}%</span>
-              <small className="text-muted">{orderedStops.length} stops total</small>
+              <small className="text-muted">{completedStopsCount} of {orderedStops.length} stops completed</small>
             </div>
             <div className="progress mt-1" style={{ height: "6px" }}>
               <div
@@ -907,6 +1131,21 @@ export default function DriverTripLiveTracking({ tripId, onBack, onTripUpdated }
                 color: "#2563eb",
                 weight: 6,
                 opacity: 0.85,
+                lineCap: "round",
+                lineJoin: "round",
+              }}
+            />
+          )}
+
+          {/* Real-Time Travelled Polyline (actual GPS breadcrumbs path) */}
+          {travelledTrail.length > 1 && (
+            <Polyline
+              positions={travelledTrail}
+              pathOptions={{
+                color: "#10b981",
+                weight: 5,
+                opacity: 0.9,
+                dashArray: "6, 8",
                 lineCap: "round",
                 lineJoin: "round",
               }}

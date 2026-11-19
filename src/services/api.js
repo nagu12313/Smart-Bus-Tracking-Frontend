@@ -13,6 +13,12 @@ import axios from 'axios';
  */
 export function getApiBaseUrl() {
   const envUrl = import.meta.env.VITE_API_BASE_URL;
+
+  // If accessed via 127.0.0.1 in local browser, match 127.0.0.1 to prevent cross-origin mismatches
+  if (typeof window !== 'undefined' && window.location && window.location.hostname === '127.0.0.1') {
+    return 'http://127.0.0.1:8080';
+  }
+
   const isRemoteDevice = typeof window !== 'undefined' && 
                          window.location && 
                          window.location.hostname !== 'localhost' && 

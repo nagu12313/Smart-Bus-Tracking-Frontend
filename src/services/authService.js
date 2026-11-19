@@ -21,7 +21,7 @@ function handleAuthError(err, fallbackMessage) {
     throw new Error(err.response.data.error);
   }
   if (!err.response) {
-    throw new Error('Unable to connect to the backend server. Please verify that the backend is running at http://localhost:8080.');
+    throw new Error('Unable to connect to the backend server at http://localhost:8080. If you just started the project, please wait ~30-45 seconds for the cloud database to finish initializing, then try again.');
   }
   throw new Error(err.message || fallbackMessage);
 }

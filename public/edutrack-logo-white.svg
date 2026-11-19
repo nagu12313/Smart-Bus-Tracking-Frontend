@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 56" width="240" height="56" fill="none">
+  <defs>
+    <linearGradient id="etWhiteBgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#216ee5"/>
+      <stop offset="100%" stop-color="#0c4294"/>
+    </linearGradient>
+    <linearGradient id="etWhiteChassis" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#eaf2ff"/>
+    </linearGradient>
+    <filter id="etWhiteShadow" x="-15%" y="-15%" width="130%" height="130%" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#0a2a5c" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+
+  <!-- Left Icon Mark -->
+  <g transform="translate(4, 6)">
+    <rect width="44" height="44" rx="13" fill="url(#etWhiteBgGrad)"/>
+    <rect width="44" height="44" rx="13" stroke="#ffffff" stroke-opacity="0.35" stroke-width="1.2"/>
+    
+    <circle cx="22" cy="11" r="5" stroke="#60a5fa" stroke-opacity="0.4" stroke-width="1" fill="none"/>
+    <circle cx="22" cy="11" r="3" stroke="#93c5fd" stroke-opacity="0.7" stroke-width="1" fill="none"/>
+    <circle cx="22" cy="11" r="1.2" fill="#ffffff"/>
+
+    <g transform="translate(9, 12) scale(1.65)" filter="url(#etWhiteShadow)">
+      <path fill="url(#etWhiteChassis)" d="M16 7a1 1 0 0 1-1 1v3.5c0 .818-.393 1.544-1 2v2a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1-.5-.5V14H5v1.5a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1-.5-.5v-2a2.5 2.5 0 0 1-1-2V8a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1V2.64C1 1.452 1.845.408 3.064.268A44 44 0 0 1 8 0c2.1 0 3.792.136 4.936.268C14.155.408 15 1.452 15 2.64V4a1 1 0 0 1 1 1z"/>
+      <rect x="4" y="2.2" width="8" height="1.1" rx="0.5" fill="#f59e0b"/>
+      <path fill="#0f2b48" d="M3.5 4.3h9a.4.4 0 0 1 .4.4v3.6a.4.4 0 0 1-.4.4h-9a.4.4 0 0 1-.4-.4V4.7a.4.4 0 0 1 .4-.4z"/>
+      <circle cx="3.8" cy="11" r="1.1" fill="#facc15"/>
+      <circle cx="12.2" cy="11" r="1.1" fill="#facc15"/>
+      <rect x="6.2" y="10.5" width="3.6" height="1" rx="0.4" fill="#0f2b48"/>
+      <rect x="2.5" y="12.6" width="11" height="0.8" rx="0.4" fill="#3b82f6"/>
+    </g>
+  </g>
+
+  <!-- Typography Right (White text) -->
+  <text x="60" y="32" font-family="'Plus Jakarta Sans', Manrope, -apple-system, sans-serif" font-size="24" font-weight="800" fill="#ffffff" letter-spacing="-0.8">Edu<tspan fill="#60a5fa">Track</tspan></text>
+  <text x="61" y="45" font-family="'Inter', -apple-system, sans-serif" font-size="8.5" font-weight="700" fill="#93c5fd" letter-spacing="1.4">CAMPUS BUS TRACKING</text>
+</svg>

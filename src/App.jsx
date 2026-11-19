@@ -185,8 +185,9 @@ function Landing() {
   return (
     <div className="landing">
       <nav className="landing-nav">
-        <Link to="/" className="brand">
-          <span className="brand-icon"><i className="bi bi-bus-front-fill" /></span> EduTrack
+        <Link to="/" className="brand" aria-label="EduTrack Home">
+          <img src="/edutrack-icon.svg" alt="EduTrack Logo" className="brand-icon-img" />
+          <span>EduTrack</span>
         </Link>
         <div className="landing-auth-buttons">
           <Link className="landing-btn-signup" to="/register">
@@ -538,8 +539,9 @@ function Login() {
   return (
     <div className="login-page">
       <div className="login-side">
-        <Link to="/" className="brand text-white">
-          <span className="brand-icon"><i className="bi bi-bus-front-fill" /></span> EduTrack
+        <Link to="/" className="brand text-white" aria-label="EduTrack Home">
+          <img src="/edutrack-icon.svg" alt="EduTrack Logo" className="brand-icon-img" />
+          <span>EduTrack</span>
         </Link>
         <div>
           <span className="eyebrow">WELCOME TO SMART TRANSPORT</span>
@@ -552,8 +554,8 @@ function Login() {
       <div className="login-main">
         {/* Mobile Header with brand & back button */}
         <div className="login-mobile-header">
-          <Link to="/" className="login-mobile-brand">
-            <span className="brand-icon"><i className="bi bi-bus-front-fill" /></span>
+          <Link to="/" className="login-mobile-brand" aria-label="EduTrack Home">
+            <img src="/edutrack-icon.svg" alt="EduTrack Logo" className="brand-icon-img" style={{ width: 34, height: 34, borderRadius: 10 }} />
             <span className="login-mobile-title">EduTrack</span>
           </Link>
           <Link to="/" className="login-mobile-back">
@@ -1227,8 +1229,9 @@ function ProtectedLayout() {
 
       <aside className={`sidebar ${open ? "show" : ""}`}>
         <div className="sidebar-brand-row">
-          <Link to="/dashboard" className="brand" onClick={() => setOpen(false)}>
-            <span className="brand-icon"><i className="bi bi-bus-front-fill" /></span> EduTrack
+          <Link to="/dashboard" className="brand" onClick={() => setOpen(false)} aria-label="EduTrack Dashboard">
+            <img src="/edutrack-icon.svg" alt="EduTrack Logo" className="brand-icon-img" />
+            <span>EduTrack</span>
           </Link>
           <button
             type="button"
@@ -1275,12 +1278,19 @@ function ProtectedLayout() {
       </aside>
       <main className="main-area">
         <header className="topbar">
-          <button className="mobile-menu" onClick={() => setOpen(!open)}>
-            <i className="bi bi-list" />
-          </button>
-          <div>
-            <span className="top-kicker">CAMPUS TRANSPORT PORTAL</span>
-            <b>{navItems.find((n) => location.pathname.includes(n[0]))?.[1] || "Dashboard"}</b>
+          <div className="topbar-left">
+            <button className="mobile-menu" onClick={() => setOpen(!open)} aria-label="Toggle navigation menu">
+              <i className="bi bi-list" />
+            </button>
+            <Link to="/dashboard" className="topbar-brand-link" title="EduTrack Dashboard">
+              <img src="/edutrack-icon.svg" alt="EduTrack Logo" className="topbar-logo-img" />
+              <span className="topbar-brand-text">EduTrack</span>
+            </Link>
+            <div className="topbar-divider" />
+            <div className="topbar-title-block">
+              <span className="top-kicker">CAMPUS TRANSPORT PORTAL</span>
+              <b>{navItems.find((n) => location.pathname.includes(n[0]))?.[1] || "Dashboard"}</b>
+            </div>
           </div>
           <div className="top-actions" ref={dropdownRef}>
             <button

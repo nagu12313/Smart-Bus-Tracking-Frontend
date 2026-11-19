@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" fill="none">
+  <defs>
+    <linearGradient id="etIconBgGradSrc" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#216ee5"/>
+      <stop offset="100%" stop-color="#0c4294"/>
+    </linearGradient>
+    <linearGradient id="etIconChassisSrc" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#eaf2ff"/>
+    </linearGradient>
+    <filter id="etIconGlowSrc" x="-15%" y="-15%" width="130%" height="130%" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="3" stdDeviation="2.5" flood-color="#0a2a5c" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <rect x="2" y="2" width="60" height="60" rx="16" ry="16" fill="url(#etIconBgGradSrc)"/>
+  <rect x="2" y="2" width="60" height="60" rx="16" ry="16" stroke="#ffffff" stroke-opacity="0.25" stroke-width="1.5"/>
+
+  <circle cx="32" cy="16" r="6.5" stroke="#60a5fa" stroke-opacity="0.4" stroke-width="1.2" fill="none"/>
+  <circle cx="32" cy="16" r="4" stroke="#93c5fd" stroke-opacity="0.75" stroke-width="1.2" fill="none"/>
+  <circle cx="32" cy="16" r="1.5" fill="#ffffff"/>
+
+  <g transform="translate(14, 18) scale(2.25)" filter="url(#etIconGlowSrc)">
+    <path fill="url(#etIconChassisSrc)" d="M16 7a1 1 0 0 1-1 1v3.5c0 .818-.393 1.544-1 2v2a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1-.5-.5V14H5v1.5a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1-.5-.5v-2a2.5 2.5 0 0 1-1-2V8a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1V2.64C1 1.452 1.845.408 3.064.268A44 44 0 0 1 8 0c2.1 0 3.792.136 4.936.268C14.155.408 15 1.452 15 2.64V4a1 1 0 0 1 1 1z"/>
+    <rect x="4" y="2.2" width="8" height="1.1" rx="0.5" fill="#f59e0b"/>
+    <path fill="#0f2b48" d="M3.5 4.3h9a.4.4 0 0 1 .4.4v3.6a.4.4 0 0 1-.4.4h-9a.4.4 0 0 1-.4-.4V4.7a.4.4 0 0 1 .4-.4z"/>
+    <line x1="8" y1="4.3" x2="8" y2="8.7" stroke="#ffffff" stroke-width="0.5" stroke-opacity="0.3"/>
+    <circle cx="3.8" cy="11" r="1.1" fill="#facc15"/>
+    <circle cx="12.2" cy="11" r="1.1" fill="#facc15"/>
+    <rect x="6.2" y="10.5" width="3.6" height="1" rx="0.4" fill="#0f2b48"/>
+    <rect x="2.5" y="12.6" width="11" height="0.8" rx="0.4" fill="#3b82f6"/>
+  </g>
+</svg>

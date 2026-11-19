@@ -9,7 +9,7 @@ export const initialDrivers = [
   { id: 3, name: "Mohan Rao", phone: "9876543212", licenseNumber: "AP072020003", license: "AP072020003", busId: 3, status: "INACTIVE" }
 ];
 export const initialStudents = [
-  { id: 1, name: "Ananya Sharma", email: "student@edutrack.com", rollNumber: "CSE2401", roll: "CSE2401", className: "B.Tech CSE", parentName: "Priya Sharma", parent: "Priya Sharma", parentPhone: "9876500011", phone: "9876500011", busId: 1, stop: "Lakshmipuram" },
+  { id: 1, name: "Ananya Sharma", email: "ananya@student.campus.edu", rollNumber: "CSE2401", roll: "CSE2401", className: "B.Tech CSE", parentName: "Priya Sharma", parent: "Priya Sharma", parentPhone: "9876500011", phone: "9876500011", busId: 1, stop: "Lakshmipuram" },
   { id: 2, name: "Arjun Reddy", email: "arjun@edutrack.com", rollNumber: "ECE2402", roll: "ECE2402", className: "B.Tech ECE", parentName: "Ravi Reddy", parent: "Ravi Reddy", parentPhone: "9876500012", phone: "9876500012", busId: 1, stop: "Brodipet" },
   { id: 3, name: "Kavya Rao", email: "kavya@edutrack.com", rollNumber: "MBA2403", roll: "MBA2403", className: "MBA", parentName: "Sita Rao", parent: "Sita Rao", parentPhone: "9876500013", phone: "9876500013", busId: 2, stop: "Nallapadu" },
   { id: 4, name: "Rahul Verma", email: "rahul@edutrack.com", rollNumber: "CSE2404", roll: "CSE2404", className: "B.Tech CSE", parentName: "Amit Verma", parent: "Amit Verma", parentPhone: "9876500014", phone: "9876500014", busId: 2, stop: "Chandramouli Nagar" }
